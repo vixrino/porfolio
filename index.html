@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>lucas ~ terminal</title>
+<meta name="description" content="Lucas Teyssier — ml, swe & blockchain. Portfolio terminal." />
+<script>document.documentElement.className = "js";</script>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'><rect x='3' y='0' width='2' height='3' fill='%231b3d27'/><rect x='11' y='0' width='2' height='3' fill='%231b3d27'/><rect x='2' y='2' width='12' height='12' fill='%231b3d27'/><rect x='3' y='3' width='10' height='10' fill='%236cc25c'/><rect x='5' y='9' width='6' height='4' fill='%239ce089'/><rect x='7' y='9' width='2' height='2' fill='%231b3d27'/><rect x='4' y='5' width='3' height='3' fill='%230a0f0a'/><rect x='9' y='5' width='3' height='3' fill='%230a0f0a'/><rect x='7' y='6' width='2' height='1' fill='%231b3d27'/><rect x='5' y='6' width='1' height='1' fill='%23f4f1e6'/><rect x='10' y='6' width='1' height='1' fill='%23f4f1e6'/></svg>" />
+</head>
+<body>
+
+<main class="wrap">
+  <section class="term" id="term">
+    <div class="term-body" id="out">
+
+      <!-- ── scène animée ── -->
+      <div class="block">
+        <div class="cmd"><span class="ps">[lucas ~]</span><span class="op">::</span>./home.sh --live</div>
+        <div class="scene" id="scene" aria-label="mascotte dans son salon">
+          <canvas id="room"></canvas>
+          <canvas id="sprite"></canvas>
+          <div class="hud"><span class="hud-ico">♪</span><span class="hud-txt" id="hud-txt">idle — sipping coffee</span></div>
+        </div>
+      </div>
+
+      <div class="block">
+        <div class="cmd"><span class="ps">[lucas ~]</span><span class="op">::</span>cat about.md</div>
+        <div class="res" id="about"><p><span class="k">&gt;</span> Welcome to my 'blog'. I'm Lucas, 23 y/o, I live in Paris — <b>machine learning engineer</b>, dm's open.</p><p><span class="k">&gt;</span> I'm currently working on 3D generative models (VQ-VAE / MeshGPT), computer vision, and systematic trading data.</p><p><span class="k">&gt;</span> I like taking an idea from a paper all the way to something that actually <i>ships</i>.</p><!-- /about --></div>
+      </div>
+
+      <div class="block">
+        <div class="cmd"><span class="ps">[lucas ~]</span><span class="op">::</span>ls projects/</div>
+        <div class="res"><div class="grid" id="proj-grid"><a class="card" href="https://github.com/vixrino/vq-vae-meshGPT" target="_blank" rel="noopener"><div class="h"><span class="n">vq-vae-meshGPT</span><span class="y">2026</span></div><div class="d">From-scratch VQ-VAE that tokenizes 3D triangle meshes (MeshGPT-style): GNN encoder, residual quantization, graph decoder.</div><div class="t">pytorch · pyg · trimesh</div></a><div class="card"><div class="h"><span class="n">football-analysis</span><span class="y">2026</span></div><div class="d">Match analysis: player and referee detection, team classification, key-point homography for a radar view, trajectory stats.</div><div class="t">yolo · siglip · opencv</div></div><a class="card" href="https://github.com/vixrino/point-transformer-shapenet" target="_blank" rel="noopener"><div class="h"><span class="n">point-transformer</span><span class="y">2026</span></div><div class="d">Point Transformer for 3D point cloud understanding, trained and evaluated on ShapeNet.</div><div class="t">pytorch · shapenet</div></a><a class="card" href="https://github.com/vixrino/GLD" target="_blank" rel="noopener"><div class="h"><span class="n">quantflow-gold</span><span class="y">2026</span></div><div class="d">Free-data stack for systematic gold trading: connectors (Yahoo, FRED, CFTC COT, ETF holdings), structuring and delivery.</div><div class="t">python · fred · cot</div></a><div class="card"><div class="h"><span class="n">ai-datacenter</span><span class="y">2025</span></div><div class="d">Mini AI cluster for distributed training: GPU/CPU scheduling and automated ML pipelines with Kubeflow / MLflow.</div><div class="t">kubernetes · docker · mlflow</div></div><div class="card"><div class="h"><span class="n">where</span><span class="y">2025</span></div><div class="d">iOS exploration app: offline place index, free zones under 15 km, radius computation.</div><div class="t">swift · xcodegen</div></div><!-- /proj-grid --></div></div>
+      </div>
+
+      <div class="block">
+        <div class="cmd"><span class="ps">[lucas ~]</span><span class="op">::</span>cat stack.txt</div>
+        <div class="res" id="stack"><div class="row"><span class="lbl">ml</span><span class="val">pytorch · tensorflow · opencv · yolo · transformers</span></div><div class="row"><span class="lbl">code</span><span class="val">python · c · java · sql · solidity · javascript</span></div><div class="row"><span class="lbl">infra</span><span class="val">docker · kubernetes · linux · git</span></div><div class="row"><span class="lbl">spoken</span><span class="val">french (native) · english C1 (TOEFL 6/6)</span></div><!-- /stack --></div>
+      </div>
+
+      <div class="block">
+        <div class="cmd"><span class="ps">[lucas ~]</span><span class="op">::</span>cat links.md</div>
+        <div class="res links" id="links"><a href="https://github.com/vixrino" target="_blank" rel="noopener"><span>github</span><span class="r">vixrino</span></a><a href="https://www.linkedin.com/in/lucas-teyssier1/" target="_blank" rel="noopener"><span>linkedin</span><span class="r">lucas-teyssier1</span></a><a href="https://x.com/0xD7b5" target="_blank" rel="noopener"><span>x.com</span><span class="r">@0xD7b5</span></a><a href="mailto:lteyssier00@gmail.com" target="_blank" rel="noopener"><span>email</span><span class="r">lteyssier00@gmail.com</span></a><a href="https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view" target="_blank" rel="noopener"><span>resume</span><span class="r">pdf ↓</span></a><!-- /links --></div>
+      </div>
+
+      <div id="live"></div>
+
+      <div class="input-line" id="input-line">
+        <span class="ps">[lucas ~]</span><span class="op">::</span>
+        <input id="cin" autocomplete="off" autocapitalize="off" autocorrect="off"
+               spellcheck="false" aria-label="terminal input" />
+      </div>
+
+      <div class="quick">
+        <span class="hint" id="try-label">try</span>
+        <button data-run="help">help</button>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<script src="data.js"></script>
+<script src="scene.js"></script>
+<script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+/* lucas ~ portfolio terminal */
+:root {
+  --bg:        #080908;
+  --dot:       #eef0ec;
+  --fg:        #d8dcd6;
+  --muted:     #7c857b;
+  --green:     #6cc25c;
+  --green-dim: #4a9445;
+  --line:      rgba(238,240,236,.13);
+  --panel:     rgba(8,9,8,.72);
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px/1.65 var(--mono);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  background-image: radial-gradient(rgba(238,240,236,.055) 1px, transparent 1px);
+  background-size: 13px 13px;
+}
+
+/* scène (panneau dans le terminal) */
+/* Sans JavaScript : scène, prompt et raccourcis n'ont rien à faire à l'écran. */
+.scene, .input-line, .quick { display: none; }
+.js .scene { display: block; }
+.js .input-line { display: flex; }
+.js .quick { display: flex; }
+
+.scene {
+  position: relative;
+  width: 100%;
+  height: clamp(230px, 36vh, 330px);
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: #050605;
+  overflow: hidden;
+}
+.scene canvas { position: absolute; inset: 0; display: block; }
+#sprite { image-rendering: pixelated; }
+.scene::after {                       /* vignettage */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at 28% 70%, transparent 34%, rgba(0,0,0,.6) 100%);
+}
+
+/* HUD (dans la scène) */
+.hud {
+  position: absolute; top: 10px; right: 10px; z-index: 3;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 2px;
+  background: rgba(5,6,5,.8);
+  font-size: 11px; letter-spacing: .04em; color: var(--muted);
+}
+.hud-ico { color: var(--green); }
+.hud-txt { color: var(--fg); }
+
+/* layout */
+.wrap {
+  position: relative; z-index: 2;
+  min-height: 100%;
+  display: flex; justify-content: center; align-items: center;
+  padding: 24px 20px;
+}
+
+/* terminal (colonne centrée, sans chrome) */
+.term {
+  width: min(760px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column;
+}
+.term-body {
+  flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding: 2px 10px 4px 2px;
+  scrollbar-width: thin; scrollbar-color: #2c312b transparent;
+}
+.term-body::-webkit-scrollbar { width: 8px; }
+.term-body::-webkit-scrollbar-thumb { background: #2c312b; border-radius: 4px; }
+
+[data-run] { cursor: pointer; }
+
+/* barre de commandes rapides */
+.quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 16px; }
+.quick .hint { color: var(--muted); font-size: 11.5px; margin-right: 2px; }
+.quick button {
+  font: inherit; font-size: 11.5px; color: var(--muted);
+  background: transparent; border: 1px solid var(--line); border-radius: 3px;
+  padding: 2px 9px; cursor: pointer; transition: .15s;
+}
+.quick button:hover { color: var(--green); border-color: var(--green-dim); background: rgba(108,194,92,.08); }
+
+.block { margin-bottom: 16px; }
+.cmd { color: var(--fg); margin-bottom: 5px; word-break: break-word; }
+.ps { color: var(--green-dim); }
+.op { color: var(--green); margin: 0 6px; }
+.res { color: #b7bdb4; }
+.res p { margin: 0 0 3px; }
+.res b { color: #e8ece6; font-weight: 600; }
+.res i { color: var(--muted); font-style: italic; }
+.k { color: var(--green-dim); margin-right: 6px; }
+
+/* projets */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 9px; margin-top: 3px; }
+.card {
+  border: 1px solid var(--line); border-left: 2px solid var(--green-dim);
+  padding: 8px 11px; background: rgba(255,255,255,.018);
+  transition: .15s; text-decoration: none; color: inherit; display: block;
+}
+.card:hover { background: rgba(108,194,92,.07); border-left-color: var(--green); }
+.card .h { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.card .n { color: #e8ece6; font-weight: 600; }
+.card .y { color: var(--muted); font-size: 11px; }
+.card .d { color: #a5aca3; font-size: 12px; margin-top: 2px; }
+.card .t { color: var(--green-dim); font-size: 11px; margin-top: 4px; letter-spacing: .03em; }
+
+/* stack */
+.row { display: flex; gap: 10px; margin-bottom: 2px; }
+.row .lbl { color: var(--green-dim); width: 84px; flex: none; }
+.row .val { color: #b7bdb4; }
+
+/* liens */
+.links a {
+  display: flex; justify-content: space-between; gap: 12px;
+  color: #b7bdb4; text-decoration: none; padding: 2px 0;
+  border-bottom: 1px dotted transparent;
+}
+.links a:hover { color: var(--green); border-bottom-color: var(--green-dim); }
+.links a .r { color: var(--muted); }
+.links a:hover .r { color: var(--green-dim); }
+
+/* saisie : vrai champ texte, stylé comme la ligne de terminal */
+.input-line { display: flex; align-items: baseline; gap: 0; margin-top: 4px; }
+.input-line input {
+  flex: 1; min-width: 0;
+  font: inherit; color: #e8ece6;
+  background: transparent; border: 0; outline: none; padding: 0;
+  caret-color: var(--green);
+}
+.input-line input::placeholder { color: var(--muted); }
+
+.err { color: #d4715c; }
+.ok  { color: var(--green); }
+
+/* responsive */
+@media (max-width: 700px) {
+  .wrap { padding: 10px; }
+  .term-body { font-size: 12.5px; padding: 12px 12px 14px; }
+  .scene { height: clamp(150px, 26vh, 220px); }
+  .row .lbl { width: 66px; }
+}
+
+/* resume */
+.sec { color: var(--green); margin: 12px 0 6px; letter-spacing: .08em; text-transform: uppercase; font-size: 11px; }
+.sec:first-child { margin-top: 2px; }
+.entry { border-left: 1px solid var(--line); padding: 0 0 0 11px; margin-bottom: 11px; }
+.eh { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.eo { color: #e8ece6; font-weight: 600; }
+.ew { color: var(--muted); font-size: 11px; }
+.er { color: var(--green-dim); }
+.en { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.eb { margin: 4px 0 0; padding-left: 15px; }
+.eb li { margin-bottom: 1px; }
+.eb li::marker { color: var(--green-dim); }
