@@ -35,7 +35,7 @@
   const T = {
     try: 'try',
     about: [
-      "Welcome to my 'blog'. I'm Lucas, 23 y/o, I live in Paris — <b>machine learning engineer</b>, dm's open.",
+      "Welcome to my 'blog'. I'm Lucas, 22 y/o, I live in Paris — <b>machine learning engineer</b>, dm's open.",
       "I'm currently working on 3D generative models (VQ-VAE / MeshGPT), computer vision, and systematic trading data.",
       'I like taking an idea from a paper all the way to something that actually <i>ships</i>.',
     ],
