@@ -29,7 +29,8 @@
     ['linkedin', 'lucas-teyssier1',       'https://www.linkedin.com/in/lucas-teyssier1/'],
     ['x.com',    '@0xD7b5',               'https://x.com/0xD7b5'],
     ['email',    'lteyssier00@gmail.com', 'mailto:lteyssier00@gmail.com'],
-    ['resume',   'pdf ↓',                 'https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view'],
+    // lien CV masqué pour l'instant, à remettre plus tard :
+    // ['resume',   'pdf ↓',                 'https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view'],
   ];
 
   const T = {
