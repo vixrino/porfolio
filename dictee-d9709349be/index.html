@@ -9,11 +9,13 @@
   :root {
     --bg: #f6f4ef; --card: #fff; --txt: #1d1c1a; --mute: #77736b;
     --line: #e3dfd6; --accent: #2f5bd3; --accent-txt: #fff;
+    --faint: #b8b4ab; --surligne: #cfe0ff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #151514; --card: #1f1f1d; --txt: #ecebe7; --mute: #9a968d;
       --line: #33322f; --accent: #7d9cff; --accent-txt: #0d0d0c;
+      --faint: #5e5c57; --surligne: #29406e;
     }
   }
   * { box-sizing: border-box; }
@@ -23,11 +25,25 @@
   }
   main { max-width: 640px; margin: 0 auto; padding: 40px 16px 64px; }
   h1 { font-size: 24px; margin: 0 0 24px; }
-  select, button { font: inherit; color: inherit; }
-  select {
-    width: 100%; padding: 10px 12px; border: 1px solid var(--line);
-    border-radius: 10px; background: var(--card);
+  button { font: inherit; color: inherit; }
+  /* liste maison : le <select> natif ignore les couleurs sur mobile */
+  .liste { position: relative; }
+  .choix {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card); cursor: pointer; text-align: left;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
+  .choix svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--mute); stroke-width: 2; }
+  .options {
+    position: absolute; z-index: 10; left: 0; right: 0; top: calc(100% + 4px);
+    margin: 0; padding: 4px; list-style: none; max-height: 60vh; overflow-y: auto;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: 0 8px 24px rgb(0 0 0 / .15);
+  }
+  .options li { padding: 10px 12px; border-radius: 6px; cursor: pointer; }
+  .options li:hover, .options li[aria-selected="true"] { background: var(--bg); }
+  .options li[aria-selected="true"] { font-weight: 600; }
+  .options li.faite, .choix.faite { color: var(--faint); }
   .fait {
     display: flex; align-items: center; gap: 8px; margin-top: 12px;
     font-size: 15px; cursor: pointer; user-select: none;
@@ -63,18 +79,20 @@
     border: 1px solid var(--line); border-radius: 14px; font-size: 18px; line-height: 1.7;
     white-space: pre-line;
   }
-  .hint { margin-top: 24px; color: var(--mute); font-size: 13px; }
-  kbd {
-    font: 12px ui-monospace, monospace; padding: 1px 5px;
-    border: 1px solid var(--line); border-radius: 4px;
-  }
+  .texte .lu { background: var(--surligne); border-radius: 3px; box-shadow: 0 0 0 2px var(--surligne); }
 </style>
 </head>
 <body>
 <main>
   <h1>Dictées</h1>
 
-  <select id="choix" aria-label="Choisir une dictée"></select>
+  <div class="liste">
+    <button class="choix" id="choix" aria-haspopup="listbox" aria-expanded="false">
+      <span id="choix-titre"></span>
+      <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <ul class="options" id="options" role="listbox" aria-label="Choisir une dictée" hidden></ul>
+  </div>
   <label class="fait"><input type="checkbox" id="fait"> Déjà faite</label>
 
   <div class="player">
@@ -96,7 +114,6 @@
   <button class="ghost reveal" id="voir" aria-expanded="false">Afficher le texte (correction)</button>
   <div class="texte" id="texte" hidden></div>
 
-  <p class="hint"><kbd>Espace</kbd> lecture / pause · <kbd>←</kbd> −5 s</p>
 </main>
 
 <audio id="audio" preload="auto"></audio>
@@ -116,25 +133,69 @@
   try { faites = JSON.parse(localStorage.getItem('dictees-faites')) || {}; } catch {}
   const libelle = d => (faites[d.id] ? '✓ ' : '') + d.titre;
 
+  let courant = 0, mots = [], spans = [], actif = -1;
+
+  function majListe() {
+    DICTEES.forEach((d, i) => {
+      const li = $('options').children[i];
+      li.textContent = libelle(d);
+      li.classList.toggle('faite', !!faites[d.id]);
+      li.setAttribute('aria-selected', i === courant);
+    });
+    $('choix-titre').textContent = libelle(DICTEES[courant]);
+    $('choix').classList.toggle('faite', !!faites[DICTEES[courant].id]);
+  }
+
+  // le texte affiché, découpé en <span> aux positions des mots lus (audio/*.json)
+  function afficherTexte(d, bornes) {
+    const t = $('texte');
+    t.textContent = '';
+    spans = []; actif = -1; mots = bornes;
+    let pos = 0;
+    for (const [, deb, fin] of bornes) {
+      t.append(d.texte.slice(pos, deb));
+      const s = document.createElement('span');
+      s.textContent = d.texte.slice(deb, fin);
+      t.append(s);
+      spans.push(s);
+      pos = fin;
+    }
+    t.append(d.texte.slice(pos));
+  }
+
   function charger(i) {
-    const d = DICTEES[i];
+    courant = +i;
+    const d = DICTEES[courant];
+    majListe();
     $('fait').checked = !!faites[d.id];
     audio.src = d.audio;
     audio.playbackRate = vitesse;          // src réinitialise la vitesse
-    $('texte').textContent = d.texte;
+    afficherTexte(d, []);
+    fetch(d.mots).then(r => r.json()).then(b => { if (DICTEES[courant] === d) afficherTexte(d, b); }).catch(() => {});
     $('texte').hidden = true;
     $('voir').setAttribute('aria-expanded', 'false');
     $('voir').textContent = 'Afficher le texte (correction)';
     if (ms) navigator.mediaSession.metadata = new MediaMetadata({ title: d.titre, artist: 'Dictée' });
   }
 
-  DICTEES.forEach((d, i) => $('choix').add(new Option(libelle(d), i)));
-  $('choix').onchange = e => charger(e.target.value);
+  const ouvrir = oui => {
+    $('options').hidden = !oui;
+    $('choix').setAttribute('aria-expanded', oui);
+    if (oui) $('options').children[courant].scrollIntoView({ block: 'nearest' });
+  };
+  DICTEES.forEach((d, i) => {
+    const li = document.createElement('li');
+    li.setAttribute('role', 'option');
+    li.onclick = () => { ouvrir(false); if (i !== courant) charger(i); };
+    $('options').append(li);
+  });
+  $('choix').onclick = () => ouvrir($('options').hidden);
+  document.addEventListener('click', e => { if (!e.target.closest('.liste')) ouvrir(false); });
   $('fait').onchange = e => {
-    const i = $('choix').value, d = DICTEES[i];
+    const d = DICTEES[courant];
     if (e.target.checked) faites[d.id] = true; else delete faites[d.id];
     try { localStorage.setItem('dictees-faites', JSON.stringify(faites)); } catch {}
-    $('choix').options[i].text = libelle(d);
+    majListe();
   };
   if (DICTEES.length) charger(0);
 
@@ -151,6 +212,29 @@
     $('temps').textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
   };
   audio.ontimeupdate = audio.onloadedmetadata = majTemps;
+
+  // surligne le mot en cours de lecture et fait défiler le texte avec la voix
+  function suivre() {
+    const t = audio.currentTime;
+    let lo = 0, hi = mots.length - 1, i = -1;
+    while (lo <= hi) {                     // dernier mot commencé avant t
+      const m = (lo + hi) >> 1;
+      if (mots[m][0] <= t) { i = m; lo = m + 1; } else hi = m - 1;
+    }
+    if (i !== actif) {
+      spans[actif]?.classList.remove('lu');
+      spans[i]?.classList.add('lu');
+      actif = i;
+      const s = spans[i];
+      if (s && !$('texte').hidden) {
+        const r = s.getBoundingClientRect();
+        if (r.top < 80 || r.bottom > innerHeight - 80) s.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+    if (!audio.paused) requestAnimationFrame(suivre);
+  }
+  audio.addEventListener('play', () => requestAnimationFrame(suivre));
+  audio.addEventListener('seeked', suivre);
   barre.oninput = () => { audio.currentTime = barre.value; };
 
   $('vitesses').onclick = e => {
@@ -192,7 +276,8 @@
   // après un clic, le bouton garde le focus et Espace le re-cliquerait
   document.addEventListener('click', e => e.target.closest('button')?.blur());
   document.onkeydown = e => {
-    if (e.target.matches('select, input, textarea')) return;
+    if (e.code === 'Escape') ouvrir(false);
+    if (e.target.matches('input, textarea')) return;
     if (e.code === 'Space') { e.preventDefault(); play.click(); }
     if (e.code === 'ArrowLeft') { e.preventDefault(); $('recul').click(); }
   };

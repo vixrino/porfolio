@@ -46,20 +46,24 @@ def a_dire(texte):
 
 
 def morceaux(texte):
-    """[(morceau, pause)] : coupe après . ! ? … ; : et entre paragraphes."""
+    """[(début, fin, pause)] : positions dans le texte, coupé après . ! ? … ; :
+    et entre paragraphes (pour retrouver chaque mot lu dans le texte affiché)."""
     out = []
-    for para in re.split(r'\n\s*\n', a_dire(texte)):
-        for m in re.split(r'(?<=[.!?…;:])\s+', para.strip()):
-            if not re.search(r'\w', m):       # un « » » ou « ) » isolé : on le recolle
+    for para in re.finditer(r'[^\n]+', texte):
+        for m in re.finditer(r'\S.*?(?:(?<=[.!?…;:])(?=\s)|$)', para.group()):
+            deb, fin = para.start() + m.start(), para.start() + m.end()
+            if not re.search(r'\w', m.group()):   # un « » » ou « ) » isolé : on le recolle
                 if out:
-                    out[-1][0] += ' ' + m
+                    out[-1][1] = fin
                 continue
-            fin = 'phrase' if re.search(r'[.!?…][»)\s]*$', m) else 'virgule'
-            out.append([m, fin])
+            out.append([deb, fin, 'virgule'])
         if out:
-            out[-1][1] = 'paragraphe'
-    out[-1][1] = 'phrase'
-    return [(m, PAUSES[fin]) for m, fin in out]
+            out[-1][2] = 'paragraphe'
+    for o in out[:-1]:
+        if o[2] == 'virgule' and re.search(r'[.!?…][»)\s]*$', texte[o[0]:o[1]]):
+            o[2] = 'phrase'
+    out[-1][2] = 'phrase'
+    return [(d, f, PAUSES[k]) for d, f, k in out]
 
 
 def silence(secondes):
@@ -73,14 +77,18 @@ def silence(secondes):
 
 
 async def parler(texte, voix, debit, limite):
+    """(mp3, [(seconde, mot)])"""
     async with limite:
         for essai in range(4):
             try:
-                son = b''
-                async for c in edge_tts.Communicate(texte, voix, rate=debit).stream():
+                son, mots = b'', []
+                com = edge_tts.Communicate(texte, voix, rate=debit, boundary='WordBoundary')
+                async for c in com.stream():
                     if c['type'] == 'audio':
                         son += c['data']
-                return son
+                    elif c['type'] == 'WordBoundary':
+                        mots.append((c['offset'] / 1e7, c['text']))
+                return son, mots
             except Exception:
                 if essai == 3:
                     raise
@@ -97,20 +105,36 @@ async def main(voix, debit):
         titre, _, texte = f.read_text(encoding='utf-8').strip().partition('\n')
         texte = texte.strip()
         parts = morceaux(texte)
+        dits = [a_dire(texte[d:f]) for d, f, _ in parts]
         # le hash dans le nom : un texte, une voix ou des pauses modifiés => nouveau fichier
-        h = hashlib.sha1(f'{voix}|{debit}|{PAUSES}|{parts}'.encode()).hexdigest()[:8]
+        h = hashlib.sha1(f'{voix}|{debit}|{PAUSES}|{dits}'.encode()).hexdigest()[:8]
         mp3 = AUDIO / f'{f.stem}-{h}.mp3'
-        gardes.add(mp3.name)
-        if mp3.exists():
+        synchro = mp3.with_suffix('.json')
+        gardes |= {mp3.name, synchro.name}
+        if mp3.exists() and synchro.exists():
             print(f'  = {f.name}')
         else:
             print(f'  + {f.name} ({len(parts)} morceaux) …', flush=True)
-            sons = await asyncio.gather(*(parler(m, voix, debit, limite) for m, _ in parts))
-            mp3.write_bytes(b''.join(s + silences[p] for s, (_, p) in zip(sons, parts)))
+            sons = await asyncio.gather(*(parler(m, voix, debit, limite) for m in dits))
+            audio, t, mots = b'', 0.0, []
+            for (son, bornes), (deb, fin, pause) in zip(sons, parts):
+                # retrouve chaque mot lu dans le texte affiché ; un mot réécrit
+                # par PRONONCIATION n'y est pas : il n'est simplement pas surligné
+                curseur = deb
+                for sec, mot in bornes:
+                    i = texte.find(mot, curseur, fin)
+                    if i >= 0:
+                        mots.append([round(t + sec, 2), i, i + len(mot)])
+                        curseur = i + len(mot)
+                bloc = son + silences[pause]
+                audio += bloc
+                t += len(bloc) * 8 / 48000     # mp3 CBR 48 kb/s : durée exacte
+            mp3.write_bytes(audio)
+            synchro.write_text(json.dumps(mots, separators=(',', ':')))
         dictees.append({'id': f.stem, 'titre': titre.strip(), 'texte': texte,
-                        'audio': f'audio/{mp3.name}'})
+                        'audio': f'audio/{mp3.name}', 'mots': f'audio/{synchro.name}'})
 
-    for vieux in AUDIO.glob('*.mp3'):
+    for vieux in [*AUDIO.glob('*.mp3'), *AUDIO.glob('*.json')]:
         if vieux.name not in gardes:
             vieux.unlink()
             print(f'  - {vieux.name}')
