@@ -101,7 +101,9 @@ async def main(voix, debit):
     limite = asyncio.Semaphore(6)
     silences = {s: silence(s) for s in PAUSES.values()}
 
-    for f in sorted(TEXTES.glob('*.txt')):
+    # les textes d'entraînement d'abord, puis les annales par année
+    ordre = lambda f: (not f.stem.startswith('entrainement'), f.stem)
+    for f in sorted(TEXTES.glob('*.txt'), key=ordre):
         titre, _, texte = f.read_text(encoding='utf-8').strip().partition('\n')
         texte = texte.strip()
         parts = morceaux(texte)
