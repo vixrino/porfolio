@@ -70,6 +70,6 @@ async def main(voix, debit):
 if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--voix', default='fr-FR-DeniseNeural')
-    p.add_argument('--debit', default='-5%', help='vitesse de base, ex. -10%%, +0%%')
+    p.add_argument('--debit', default='-25%', help='vitesse de base, ex. -10%%, +0%%')
     a = p.parse_args()
     asyncio.run(main(a.voix, a.debit))
