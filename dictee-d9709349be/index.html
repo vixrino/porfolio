@@ -70,6 +70,8 @@
   }
   input[type=range] { display: block; width: 100%; margin: 16px 0 0; accent-color: var(--accent); }
   .ghost { min-height: 40px; }
+  .icone { display: grid; place-items: center; min-width: 44px; }
+  .icone svg { width: 18px; height: 18px; fill: currentColor; }
   .time { font-variant-numeric: tabular-nums; color: var(--mute); font-size: 14px; }
   .speeds { margin-top: 16px; flex-wrap: wrap; }
   .speeds span { color: var(--mute); font-size: 14px; }
@@ -98,6 +100,7 @@
   <div class="player">
     <div class="row">
       <button class="play" id="play" aria-label="Lecture"></button>
+      <button class="ghost icone" id="debut" title="Revenir au début" aria-label="Revenir au début"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
       <button class="ghost" id="recul" title="Reculer de 5 s">−5 s</button>
       <span class="time" id="temps">0:00 / 0:00</span>
     </div>
@@ -206,6 +209,7 @@
   audio.onplay = () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-label', 'Pause'); };
   audio.onpause = () => { play.innerHTML = ICON_PLAY; play.setAttribute('aria-label', 'Lecture'); };
 
+  $('debut').onclick = () => { audio.currentTime = 0; };
   $('recul').onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 5); };
 
   const majTemps = () => {
@@ -262,6 +266,7 @@
       seekbackward: e => recule(e.seekOffset || 5),
       seekforward: e => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (e.seekOffset || 5)); },
       seekto: e => { audio.currentTime = e.seekTime; },
+      previoustrack: () => { audio.currentTime = 0; },
     };
     for (const [a, f] of Object.entries(actions)) {
       try { navigator.mediaSession.setActionHandler(a, f); } catch {}
