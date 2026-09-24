@@ -28,6 +28,11 @@
     width: 100%; padding: 10px 12px; border: 1px solid var(--line);
     border-radius: 10px; background: var(--card);
   }
+  .fait {
+    display: flex; align-items: center; gap: 8px; margin-top: 12px;
+    font-size: 15px; cursor: pointer; user-select: none;
+  }
+  .fait input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
   .player {
     margin-top: 16px; padding: 20px; background: var(--card);
     border: 1px solid var(--line); border-radius: 14px;
@@ -69,6 +74,7 @@
   <h1>Dictées</h1>
 
   <select id="choix" aria-label="Choisir une dictée"></select>
+  <label class="fait"><input type="checkbox" id="fait"> Déjà faite</label>
 
   <div class="player">
     <div class="row">
@@ -103,8 +109,14 @@
 
   const fmt = s => (s = Math.floor(s || 0), `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`);
 
+  // « déjà faite » : mémorisé dans ce navigateur (par appareil)
+  let faites = {};
+  try { faites = JSON.parse(localStorage.getItem('dictees-faites')) || {}; } catch {}
+  const libelle = d => (faites[d.id] ? '✓ ' : '') + d.titre;
+
   function charger(i) {
     const d = DICTEES[i];
+    $('fait').checked = !!faites[d.id];
     audio.src = d.audio;
     audio.playbackRate = vitesse;          // src réinitialise la vitesse
     $('texte').textContent = d.texte;
@@ -114,8 +126,14 @@
     if (ms) navigator.mediaSession.metadata = new MediaMetadata({ title: d.titre, artist: 'Dictée' });
   }
 
-  DICTEES.forEach((d, i) => $('choix').add(new Option(d.titre, i)));
+  DICTEES.forEach((d, i) => $('choix').add(new Option(libelle(d), i)));
   $('choix').onchange = e => charger(e.target.value);
+  $('fait').onchange = e => {
+    const i = $('choix').value, d = DICTEES[i];
+    if (e.target.checked) faites[d.id] = true; else delete faites[d.id];
+    try { localStorage.setItem('dictees-faites', JSON.stringify(faites)); } catch {}
+    $('choix').options[i].text = libelle(d);
+  };
   if (DICTEES.length) charger(0);
 
   play.innerHTML = ICON_PLAY;
