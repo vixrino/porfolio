@@ -71,7 +71,10 @@
   input[type=range] { display: block; width: 100%; margin: 16px 0 0; accent-color: var(--accent); }
   .ghost { min-height: 40px; }
   .icone { display: grid; place-items: center; min-width: 44px; }
-  .icone svg { width: 18px; height: 18px; fill: currentColor; }
+  .icone svg {
+    width: 20px; height: 20px; fill: none; stroke: currentColor;
+    stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round;
+  }
   .time { font-variant-numeric: tabular-nums; color: var(--mute); font-size: 14px; }
   .speeds { margin-top: 16px; flex-wrap: wrap; }
   .speeds span { color: var(--mute); font-size: 14px; }
@@ -100,7 +103,7 @@
   <div class="player">
     <div class="row">
       <button class="play" id="play" aria-label="Lecture"></button>
-      <button class="ghost icone" id="debut" title="Revenir au début" aria-label="Revenir au début"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button class="ghost icone" id="debut" title="Revenir au début" aria-label="Revenir au début"><svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 3.5V8H8"/></svg></button>
       <button class="ghost" id="recul" title="Reculer de 5 s">−5 s</button>
       <span class="time" id="temps">0:00 / 0:00</span>
     </div>
@@ -109,8 +112,6 @@
       <span>Vitesse</span>
       <button class="ghost" data-v="0.8" aria-pressed="false">×0,8</button>
       <button class="ghost" data-v="1" aria-pressed="true">×1</button>
-      <button class="ghost" data-v="1.25" aria-pressed="false">×1,25</button>
-      <button class="ghost" data-v="1.5" aria-pressed="false">×1,5</button>
     </div>
   </div>
 
