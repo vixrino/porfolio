@@ -25,6 +25,7 @@ import lameenc
 ICI = Path(__file__).parent
 TEXTES = ICI / 'textes'
 AUDIO = ICI / 'audio'
+EN_PREMIER = ['entrainement-4']
 
 # silences (secondes) après chaque type de fin de morceau
 PAUSES = {'phrase': 1.6, 'virgule': 1.0, 'paragraphe': 2.4}
@@ -101,8 +102,8 @@ async def main(voix, debit):
     limite = asyncio.Semaphore(6)
     silences = {s: silence(s) for s in PAUSES.values()}
 
-    # les textes d'entraînement d'abord, puis les annales par année
-    ordre = lambda f: (not f.stem.startswith('entrainement'), f.stem)
+    # EN_PREMIER, puis les autres textes d'entraînement, puis les annales par année
+    ordre = lambda f: (f.stem not in EN_PREMIER, not f.stem.startswith('entrainement'), f.stem)
     for f in sorted(TEXTES.glob('*.txt'), key=ordre):
         titre, _, texte = f.read_text(encoding='utf-8').strip().partition('\n')
         texte = texte.strip()
