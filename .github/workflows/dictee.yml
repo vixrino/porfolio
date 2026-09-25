@@ -7,7 +7,8 @@ on:
 permissions:
   contents: write
   pages: write
-concurrency: dictees          # un ajout à la fois, dans l'ordre
+# pas de « concurrency » : GitHub y annulerait les ajouts en attente ; deux ajouts
+# simultanés sont gérés par ajouter.py (push refusé → on repart de main et on recommence)
 jobs:
   ajouter:
     runs-on: ubuntu-latest
@@ -17,7 +18,7 @@ jobs:
         with: { ref: main }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
-      - run: pip install edge-tts lameenc
+      - run: pip install edge-tts==7.2.8 lameenc==1.8.4   # versions figées : même audio qu'en local
       - name: Texte → audio → commit
         run: |
           git config user.name 'github-actions[bot]'

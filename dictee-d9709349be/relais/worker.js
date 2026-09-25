@@ -18,8 +18,9 @@ export default {
 
     let texte, titre;
     try { ({ texte = '', titre = '' } = await req.json()); } catch { return reponse(400, { erreur: 'Requête illisible.' }); }
-    texte = String(texte).trim(); titre = String(titre).trim().slice(0, 120);
-    if (texte.length < 20) return reponse(400, { erreur: 'Le texte est vide ou trop court.' });
+    // Array.from : couper par caractères, pas au milieu d'un emoji
+    texte = String(texte).trim(); titre = Array.from(String(titre).trim()).slice(0, 120).join('');
+    if (texte.length < 20 || !/[\p{L}\p{N}]/u.test(texte)) return reponse(400, { erreur: 'Le texte est vide, trop court ou sans aucun mot.' });
     if (texte.length > 20000) return reponse(413, { erreur: 'Texte trop long (20 000 caractères max).' });
 
     const r = await fetch(`https://api.github.com/repos/${DEPOT}/dispatches`, {

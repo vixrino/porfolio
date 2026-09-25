@@ -67,6 +67,8 @@ def morceaux(texte):
     for o in out[:-1]:
         if o[2] == 'virgule' and re.search(r'[.!?…][»)\s]*$', texte[o[0]:o[1]]):
             o[2] = 'phrase'
+    if not out:
+        raise ValueError('Aucun mot à lire dans ce texte.')
     out[-1][2] = 'phrase'
     return [(d, f, PAUSES[k]) for d, f, k in out]
 
@@ -111,9 +113,15 @@ async def main(voix, debit):
     # tri « naturel » : entrainement-10 après entrainement-9 (pas avant entrainement-5)
     naturel = lambda nom: [int(x) if x.isdigit() else x for x in re.split(r'(\d+)', nom)]
     ordre = lambda f: (f.stem not in EN_PREMIER, not f.stem.startswith('entrainement'), naturel(f.stem))
+    k = 0
     for f in sorted(TEXTES.glob('*.txt'), key=ordre):
-        titre, _, texte = f.read_text(encoding='utf-8').strip().partition('\n')
-        texte = texte.strip()
+        titre, _, texte = f.read_text(encoding='utf-8').partition('\n')
+        titre, texte = titre.strip(), texte.strip()
+        if f.stem.startswith('entrainement'):
+            # 1re ligne = sous-titre seul (peut être vide) ; le numéro vient de la position,
+            # donc pas de trou ni de doublon après une suppression
+            k += 1
+            titre = f'Dictée {k}' + (f' {titre}' if titre else '')
         parts = morceaux(texte)
         dits = [a_dire(texte[d:f]) for d, f, _ in parts]
         # le hash dans le nom : un texte, une voix ou des pauses modifiés => nouveau fichier
@@ -132,6 +140,11 @@ async def main(voix, debit):
                 # par PRONONCIATION n'y est pas : il n'est simplement pas surligné
                 curseur = deb
                 for sec, mot in bornes:
+                    # edge-tts colle parfois un nombre au mot suivant (« 1804 conserve ») :
+                    # on ne garde que le premier mot, sinon les deux s'allument ensemble
+                    mot = mot.strip().split(' ')[0]
+                    if not mot:
+                        continue
                     i = texte.find(mot, curseur, fin)
                     if i >= 0:
                         mots.append([round(t + DELAI + sec, 2), i, i + len(mot)])
