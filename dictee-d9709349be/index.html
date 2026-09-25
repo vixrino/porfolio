@@ -335,25 +335,52 @@
     } catch { return []; }
   }
 
+  // dès que le workflow a enregistré la dictée, on la lit directement dans le dépôt GitHub
+  // (commit précis, jamais en cache) sans attendre les ~45 s de republication de GitHub Pages
+  async function listeDuDepot() {
+    try {
+      const api = 'https://api.github.com/repos/vixrino/porfolio/commits?path=dictee-d9709349be/textes.js&per_page=1';
+      const [{ sha }] = await (await fetch(api, { cache: 'no-store' })).json();
+      const base = `https://raw.githubusercontent.com/vixrino/porfolio/${sha}/dictee-d9709349be/`;
+      const js = await (await fetch(base + 'textes.js')).text();
+      return { base, liste: JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1)) };
+    } catch { return null; }
+  }
+
   let surveillance = false;
   function surveiller(attente) {             // attente = ajout lancé ici ; null = lancé par quelqu'un d'autre
     if (surveillance) return;
     surveillance = true;
     const depuis = attente?.depuis || Date.now();
     const connues = new Set(attente?.ids || DICTEES.map(d => d.id));
+    const fenetre = attente ? depuis - 120e3 : depuis - 10 * 60e3;   // workflows qui concernent ce suivi
     const nom = attente?.titre ? `« ${attente.titre} »` : 'Une nouvelle dictée';
     const fin = (msg, erreur) => { surveillance = false; if (attente) ecrireAttente(null); etat('suivi', msg, erreur); };
     const tour = async () => {
       const min = Math.floor((Date.now() - depuis) / 60e3);
-      etat('suivi', `⏳ ${nom} est en cours d’ajout (${min ? `depuis ${min} min` : 'à l’instant'}, environ 1 min au total)…`);
-      const liste = await listeEnLigne();
-      const arrivee = liste?.filter(d => !connues.has(d.id)).pop();
+      etat('suivi', `⏳ ${nom} est en cours d’ajout (${min ? `depuis ${min} min` : 'à l’instant'}, environ 30 s au total)…`);
+      let liste = await listeEnLigne();
+      let arrivees = liste?.filter(d => !connues.has(d.id)) || [];
+      const runs = await ajoutsGitHub();
+      if (!arrivees.length && runs.some(r => r.conclusion === 'success' && Date.parse(r.created_at) > fenetre)) {
+        const depot = await listeDuDepot();
+        arrivees = depot?.liste.filter(d => !connues.has(d.id)) || [];
+        try {
+          // raw.githubusercontent sert le mp3 en « octet-stream » : on le repasse en audio/mpeg
+          await Promise.all(arrivees.map(async d => {
+            const mp3 = await (await fetch(depot.base + d.audio)).arrayBuffer();
+            d.audio = URL.createObjectURL(new Blob([mp3], { type: 'audio/mpeg' }));
+            d.mots = depot.base + d.mots;
+          }));
+          liste = depot?.liste;
+        } catch { arrivees = []; }
+      }
+      const arrivee = arrivees.pop();
       if (arrivee) {
         integrer(liste);
         if (attente && audio.paused) charger(DICTEES.findIndex(d => d.id === arrivee.id));
         return fin(`✓ « ${arrivee.titre} » est prête.`);
       }
-      const runs = await ajoutsGitHub();
       const actif = runs.some(r => r.status !== 'completed');
       const recents = runs.filter(r => Date.parse(r.created_at) > depuis - 120e3 && r.status === 'completed');
       if (!actif && recents.some(r => r.conclusion !== 'success'))
@@ -362,7 +389,7 @@
       if (!attente && !actif && !publieIlYaPeu) return fin('');
       if (Date.now() - depuis > 20 * 60e3)
         return fin('La dictée n’est toujours pas arrivée : réessaie de l’ajouter.', true);
-      setTimeout(tour, 15e3);
+      setTimeout(tour, 8e3);
     };
     tour();
   }
