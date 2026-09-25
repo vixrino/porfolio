@@ -121,7 +121,7 @@
   <button class="ghost ajouter" id="ajouter">+ Ajouter un texte</button>
   <p class="etat" id="suivi" hidden></p>
 
-  <dialog id="fenetre">
+  <dialog id="fenetre" autofocus>
     <h2>Ajouter un texte</h2>
     <form id="formulaire">
       <input type="text" id="nv-titre" placeholder="Titre (facultatif)" maxlength="120">
@@ -251,7 +251,12 @@
   const etat = (id, msg, erreur) => {
     $(id).hidden = !msg; $(id).textContent = msg || ''; $(id).classList.toggle('erreur', !!erreur);
   };
-  $('ajouter').onclick = () => { etat('nv-etat', ''); $('fenetre').showModal(); };
+  // focus sur la fenêtre elle-même, pas sur un champ : le clavier du téléphone ne s'ouvre pas tout seul
+  $('ajouter').onclick = () => {
+    etat('nv-etat', '');
+    $('fenetre').showModal();
+    if (document.activeElement?.matches('input, textarea')) document.activeElement.blur();
+  };
   $('nv-annuler').onclick = () => $('fenetre').close();
   $('nv-choisir').onclick = () => $('nv-fichier').click();
 
