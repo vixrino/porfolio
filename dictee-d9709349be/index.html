@@ -297,7 +297,9 @@
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erreur || `erreur ${r.status}`);
       $('fenetre').close();
       $('nv-titre').value = $('nv-texte').value = '';
-      attendreNouvelle(DICTEES.length);
+      const attente = { titre, depuis: Date.now(), ids: DICTEES.map(d => d.id) };
+      ecrireAttente(attente);
+      surveiller(attente);
     } catch (err) {
       etat('nv-etat', 'Échec : ' + err.message, true);
     } finally {
@@ -305,30 +307,75 @@
     }
   };
 
-  // relit textes.js jusqu'à ce que la nouvelle dictée soit en ligne, puis l'ajoute à la liste
-  function attendreNouvelle(avant) {
-    const debut = Date.now();
-    etat('suivi', 'Création de l’audio… la dictée apparaîtra ici dans 2 à 4 minutes.');
-    const essai = async () => {
-      try {
-        const js = await (await fetch('textes.js?t=' + Date.now(), { cache: 'no-store' })).text();
-        const liste = JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1));
-        if (liste.length > avant) {
-          const id = DICTEES[courant]?.id;
-          window.DICTEES = liste;
-          construireListe();
-          const nouvelle = liste.findIndex(d => !avantIds.has(d.id));
-          courant = Math.max(0, liste.findIndex(d => d.id === id));
-          if (audio.paused && nouvelle >= 0) charger(nouvelle); else majListe();
-          return etat('suivi', `✓ « ${liste[nouvelle]?.titre || 'Nouvelle dictée'} » est prête.`);
-        }
-      } catch {}
-      if (Date.now() - debut > 10 * 60e3) return etat('suivi', 'La dictée n’est pas encore arrivée : recharge la page dans quelques minutes.', true);
-      setTimeout(essai, 15e3);
-    };
-    const avantIds = new Set(DICTEES.map(d => d.id));
-    setTimeout(essai, 60e3);
+  // --- suivi d'un ajout, qui survit à un rafraîchissement :
+  // l'ajout lancé depuis ce téléphone est mémorisé (localStorage), et GitHub dit à tout
+  // le monde si un ajout tourne ou a échoué ; textes.js relu sans cache dit quand il est en ligne
+  const CLE_AJOUT = 'dictees-ajout-en-cours';
+  const lireAttente = () => { try { return JSON.parse(localStorage.getItem(CLE_AJOUT)); } catch { return null; } };
+  const ecrireAttente = a => {
+    try { a ? localStorage.setItem(CLE_AJOUT, JSON.stringify(a)) : localStorage.removeItem(CLE_AJOUT); } catch {}
+  };
+  async function listeEnLigne() {
+    try {
+      const js = await (await fetch('textes.js?t=' + Date.now(), { cache: 'no-store' })).text();
+      return JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1));
+    } catch { return null; }
   }
+  function integrer(liste) {                 // la liste en ligne remplace celle chargée (peut-être en cache)
+    const id = DICTEES[courant]?.id;
+    window.DICTEES = liste;
+    construireListe();
+    courant = Math.max(0, DICTEES.findIndex(d => d.id === id));
+    majListe();
+  }
+  async function ajoutsGitHub() {
+    try {
+      const r = await fetch('https://api.github.com/repos/vixrino/porfolio/actions/workflows/dictee.yml/runs?per_page=5');
+      return (await r.json()).workflow_runs || [];
+    } catch { return []; }
+  }
+
+  let surveillance = false;
+  function surveiller(attente) {             // attente = ajout lancé ici ; null = lancé par quelqu'un d'autre
+    if (surveillance) return;
+    surveillance = true;
+    const depuis = attente?.depuis || Date.now();
+    const connues = new Set(attente?.ids || DICTEES.map(d => d.id));
+    const nom = attente?.titre ? `« ${attente.titre} »` : 'Une nouvelle dictée';
+    const fin = (msg, erreur) => { surveillance = false; if (attente) ecrireAttente(null); etat('suivi', msg, erreur); };
+    const tour = async () => {
+      const min = Math.floor((Date.now() - depuis) / 60e3);
+      etat('suivi', `⏳ ${nom} est en cours d’ajout (${min ? `depuis ${min} min` : 'à l’instant'}, environ 1 min au total)…`);
+      const liste = await listeEnLigne();
+      const arrivee = liste?.filter(d => !connues.has(d.id)).pop();
+      if (arrivee) {
+        integrer(liste);
+        if (attente && audio.paused) charger(DICTEES.findIndex(d => d.id === arrivee.id));
+        return fin(`✓ « ${arrivee.titre} » est prête.`);
+      }
+      const runs = await ajoutsGitHub();
+      const actif = runs.some(r => r.status !== 'completed');
+      const recents = runs.filter(r => Date.parse(r.created_at) > depuis - 120e3 && r.status === 'completed');
+      if (!actif && recents.some(r => r.conclusion !== 'success'))
+        return fin(`L’ajout ${attente?.titre ? `de « ${attente.titre} » ` : ''}a échoué. Réessaie.`, true);
+      const publieIlYaPeu = runs.some(r => r.conclusion === 'success' && Date.now() - Date.parse(r.updated_at) < 5 * 60e3);
+      if (!attente && !actif && !publieIlYaPeu) return fin('');
+      if (Date.now() - depuis > 20 * 60e3)
+        return fin('La dictée n’est toujours pas arrivée : réessaie de l’ajouter.', true);
+      setTimeout(tour, 15e3);
+    };
+    tour();
+  }
+
+  // au chargement : reprendre un ajout en cours, et rattraper une liste en cache périmée
+  (async () => {
+    const attente = lireAttente();
+    if (attente && Date.now() - attente.depuis < 20 * 60e3) return surveiller(attente);
+    ecrireAttente(null);
+    const liste = await listeEnLigne();
+    if (liste && liste.some(d => !DICTEES.some(x => x.id === d.id))) integrer(liste);
+    if ((await ajoutsGitHub()).some(r => r.status !== 'completed')) surveiller(null);
+  })();
 
   // l'icône suit toujours l'état réel de l'audio (lecture, pause, fin, retour au début, écran verrouillé)
   const majBouton = () => {
