@@ -84,6 +84,25 @@
     border: 1px solid var(--line); border-radius: 14px; font-size: 18px; line-height: 1.7;
     white-space: pre-line;
   }
+  .ajouter { margin-top: 12px; }
+  dialog {
+    width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 20px;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--txt);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 { margin: 0 0 16px; font-size: 20px; }
+  dialog form { display: grid; gap: 12px; }
+  dialog input[type=text], dialog textarea {
+    width: 100%; font: inherit; font-size: 16px; color: inherit; background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  }
+  dialog textarea { min-height: 38dvh; resize: vertical; }
+  .fichier { justify-self: start; }
+  .actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .plein { background: var(--accent); color: var(--accent-txt); border-color: var(--accent); }
+  .plein:disabled { opacity: .6; }
+  .etat { margin: 0; font-size: 14px; color: var(--mute); }
+  .etat.erreur { color: #c0392b; }
   .texte .lu { background: var(--surligne); border-radius: 3px; box-shadow: 0 0 0 2px var(--surligne); }
 </style>
 </head>
@@ -99,6 +118,23 @@
     <ul class="options" id="options" role="listbox" aria-label="Choisir une dictée" hidden></ul>
   </div>
   <label class="fait"><input type="checkbox" id="fait"> Déjà faite</label>
+  <button class="ghost ajouter" id="ajouter">+ Ajouter un texte</button>
+  <p class="etat" id="suivi" hidden></p>
+
+  <dialog id="fenetre">
+    <h2>Ajouter un texte</h2>
+    <form id="formulaire">
+      <input type="text" id="nv-titre" placeholder="Titre (facultatif)" maxlength="120">
+      <button type="button" class="ghost fichier" id="nv-choisir">Choisir un fichier (.txt, .docx)</button>
+      <input type="file" id="nv-fichier" accept=".txt,.md,.docx,text/plain" hidden>
+      <textarea id="nv-texte" placeholder="… ou colle le texte ici"></textarea>
+      <p class="etat" id="nv-etat" hidden></p>
+      <div class="actions">
+        <button type="button" class="ghost" id="nv-annuler">Annuler</button>
+        <button type="submit" class="ghost plein" id="nv-ok">Ajouter</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="player">
     <div class="row">
@@ -189,12 +225,16 @@
     $('choix').setAttribute('aria-expanded', oui);
     if (oui) $('options').children[courant].scrollIntoView({ block: 'nearest' });
   };
-  DICTEES.forEach((d, i) => {
-    const li = document.createElement('li');
-    li.setAttribute('role', 'option');
-    li.onclick = () => { ouvrir(false); if (i !== courant) charger(i); };
-    $('options').append(li);
-  });
+  function construireListe() {
+    $('options').textContent = '';
+    DICTEES.forEach((d, i) => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+      li.onclick = () => { ouvrir(false); if (i !== courant) charger(i); };
+      $('options').append(li);
+    });
+  }
+  construireListe();
   $('choix').onclick = () => ouvrir($('options').hidden);
   document.addEventListener('click', e => { if (!e.target.closest('.liste')) ouvrir(false); });
   $('fait').onchange = e => {
@@ -204,6 +244,91 @@
     majListe();
   };
   if (DICTEES.length) charger(0);
+
+  // --- « Ajouter un texte » : la page envoie le texte au relais (Worker Cloudflare, relais/),
+  // qui lance le workflow GitHub : audio généré, texte rangé dans textes/, site republié (~3 min)
+  const RELAIS = 'https://dictee.dictees-d9709349.workers.dev';
+  const etat = (id, msg, erreur) => {
+    $(id).hidden = !msg; $(id).textContent = msg || ''; $(id).classList.toggle('erreur', !!erreur);
+  };
+  $('ajouter').onclick = () => { etat('nv-etat', ''); $('fenetre').showModal(); };
+  $('nv-annuler').onclick = () => $('fenetre').close();
+  $('nv-choisir').onclick = () => $('nv-fichier').click();
+
+  // .txt / .md lus tels quels ; .docx = zip dont on lit word/document.xml (JSZip chargé à la demande)
+  let jszip;
+  async function lireDocx(f) {
+    jszip ||= await new Promise((ok, ko) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+      sc.onload = () => ok(window.JSZip); sc.onerror = () => ko(new Error('JSZip introuvable'));
+      document.head.append(sc);
+    });
+    const xml = await (await jszip.loadAsync(f)).file('word/document.xml').async('string');
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    return [...doc.getElementsByTagNameNS(W, 'p')].map(p =>
+      [...p.getElementsByTagNameNS(W, '*')].map(el =>
+        el.localName === 't' ? el.textContent : el.localName === 'tab' ? '\t' : el.localName === 'br' ? '\n' : ''
+      ).join('').trim()
+    ).filter(Boolean).join('\n\n');
+  }
+  $('nv-fichier').onchange = async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      $('nv-texte').value = /\.docx$/i.test(f.name) ? await lireDocx(f) : await f.text();
+      if (!$('nv-titre').value) $('nv-titre').value = f.name.replace(/\.[^.]+$/, '');
+      etat('nv-etat', '');
+    } catch { etat('nv-etat', 'Ce fichier n’a pas pu être lu. Copie-colle le texte à la place.', true); }
+    e.target.value = '';
+  };
+
+  $('formulaire').onsubmit = async e => {
+    e.preventDefault();
+    const texte = $('nv-texte').value.trim(), titre = $('nv-titre').value.trim();
+    if (texte.length < 20) return etat('nv-etat', 'Colle un texte ou choisis un fichier.', true);
+    $('nv-ok').disabled = true;
+    etat('nv-etat', 'Envoi…');
+    try {
+      const r = await fetch(RELAIS, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texte, titre }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erreur || `erreur ${r.status}`);
+      $('fenetre').close();
+      $('nv-titre').value = $('nv-texte').value = '';
+      attendreNouvelle(DICTEES.length);
+    } catch (err) {
+      etat('nv-etat', 'Échec : ' + err.message, true);
+    } finally {
+      $('nv-ok').disabled = false;
+    }
+  };
+
+  // relit textes.js jusqu'à ce que la nouvelle dictée soit en ligne, puis l'ajoute à la liste
+  function attendreNouvelle(avant) {
+    const debut = Date.now();
+    etat('suivi', 'Création de l’audio… la dictée apparaîtra ici dans 2 à 4 minutes.');
+    const essai = async () => {
+      try {
+        const js = await (await fetch('textes.js?t=' + Date.now(), { cache: 'no-store' })).text();
+        const liste = JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1));
+        if (liste.length > avant) {
+          const id = DICTEES[courant]?.id;
+          window.DICTEES = liste;
+          construireListe();
+          const nouvelle = liste.findIndex(d => !avantIds.has(d.id));
+          courant = Math.max(0, liste.findIndex(d => d.id === id));
+          if (audio.paused && nouvelle >= 0) charger(nouvelle); else majListe();
+          return etat('suivi', `✓ « ${liste[nouvelle]?.titre || 'Nouvelle dictée'} » est prête.`);
+        }
+      } catch {}
+      if (Date.now() - debut > 10 * 60e3) return etat('suivi', 'La dictée n’est pas encore arrivée : recharge la page dans quelques minutes.', true);
+      setTimeout(essai, 15e3);
+    };
+    const avantIds = new Set(DICTEES.map(d => d.id));
+    setTimeout(essai, 60e3);
+  }
 
   // l'icône suit toujours l'état réel de l'audio (lecture, pause, fin, retour au début, écran verrouillé)
   const majBouton = () => {
