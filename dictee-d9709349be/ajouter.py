@@ -38,6 +38,8 @@ def lancer(cmd, cwd):
 
 def ajouter(texte, titre='', essai=False):
     texte, titre = normaliser(texte), ' '.join(titre.split())
+    titre = re.sub(r'^dict[ée]e\s*\d*\s*[:·—-]?\s*', '', titre, flags=re.I)   # « Dictée 9 … » : le numéro est ajouté ici
+    titre = titre[:1].upper() + titre[1:]
     if len(texte) < 20:
         raise SystemExit('Le texte est vide ou trop court.')
     ident, k = prochaine()
