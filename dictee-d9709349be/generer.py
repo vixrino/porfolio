@@ -30,6 +30,10 @@ EN_PREMIER = ['entrainement-4']
 # silences (secondes) après chaque type de fin de morceau
 PAUSES = {'phrase': 1.6, 'virgule': 1.0, 'paragraphe': 2.4}
 
+# l'encodeur mp3 (LAME, dans edge-tts comme dans lameenc) décale le son de 576
+# échantillons au décodage : sans ça, chaque mot serait surligné 24 ms trop tôt
+DELAI = 576 / 24000
+
 # ce que la voix lit mal : corrigé pour l'audio seulement, le texte affiché ne change pas
 PRONONCIATION = {
     'XVIIIᵉ': 'dix-huitième', 'XIXᵉ': 'dix-neuvième',
@@ -68,7 +72,8 @@ def morceaux(texte):
 
 
 def silence(secondes):
-    # même format que la sortie edge-tts (mp3 24 kHz mono 48 kb/s) : on peut coller les octets
+    # même format que la sortie edge-tts (mp3 24 kHz mono 48 kb/s, trames de 144 octets,
+    # sans trame Xing/Info) : on peut coller les octets, et le fichier reste un CBR uniforme
     enc = lameenc.Encoder()
     enc.set_bit_rate(48)
     enc.set_in_sample_rate(24000)
@@ -110,7 +115,7 @@ async def main(voix, debit):
         parts = morceaux(texte)
         dits = [a_dire(texte[d:f]) for d, f, _ in parts]
         # le hash dans le nom : un texte, une voix ou des pauses modifiés => nouveau fichier
-        h = hashlib.sha1(f'{voix}|{debit}|{PAUSES}|{dits}'.encode()).hexdigest()[:8]
+        h = hashlib.sha1(f'{voix}|{debit}|{PAUSES}|{DELAI}|{dits}'.encode()).hexdigest()[:8]
         mp3 = AUDIO / f'{f.stem}-{h}.mp3'
         synchro = mp3.with_suffix('.json')
         gardes |= {mp3.name, synchro.name}
@@ -127,7 +132,7 @@ async def main(voix, debit):
                 for sec, mot in bornes:
                     i = texte.find(mot, curseur, fin)
                     if i >= 0:
-                        mots.append([round(t + sec, 2), i, i + len(mot)])
+                        mots.append([round(t + DELAI + sec, 2), i, i + len(mot)])
                         curseur = i + len(mot)
                 bloc = son + silences[pause]
                 audio += bloc

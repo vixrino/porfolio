@@ -205,24 +205,34 @@
   };
   if (DICTEES.length) charger(0);
 
-  play.innerHTML = ICON_PLAY;
-  play.onclick = () => audio.paused ? audio.play() : audio.pause();
-  audio.onplay = () => { play.innerHTML = ICON_PAUSE; play.setAttribute('aria-label', 'Pause'); };
-  audio.onpause = () => { play.innerHTML = ICON_PLAY; play.setAttribute('aria-label', 'Lecture'); };
+  // l'icône suit toujours l'état réel de l'audio (lecture, pause, fin, retour au début, écran verrouillé)
+  const majBouton = () => {
+    play.innerHTML = audio.paused ? ICON_PLAY : ICON_PAUSE;
+    play.setAttribute('aria-label', audio.paused ? 'Lecture' : 'Pause');
+    if (ms) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
+  };
+  const lire = () => audio.play().catch(majBouton);
+  for (const e of ['play', 'playing', 'pause', 'ended', 'emptied']) audio.addEventListener(e, majBouton);
+  majBouton();
+  play.onclick = () => audio.paused ? lire() : audio.pause();
 
-  $('debut').onclick = () => { audio.currentTime = 0; };
+  $('debut').onclick = () => { audio.pause(); audio.currentTime = 0; majBouton(); };
   $('recul').onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 5); };
 
+  // pendant qu'on fait glisser la barre, c'est elle qui donne la position (pas l'audio)
+  let glisse = false;
   const majTemps = () => {
     barre.max = audio.duration || 0;
-    barre.value = audio.currentTime;
-    $('temps').textContent = `${fmt(audio.currentTime)} / ${fmt(audio.duration)}`;
+    if (!glisse) barre.value = audio.currentTime;
+    $('temps').textContent = `${fmt(glisse ? +barre.value : audio.currentTime)} / ${fmt(audio.duration)}`;
   };
   audio.ontimeupdate = audio.onloadedmetadata = majTemps;
 
   // surligne le mot en cours de lecture et fait défiler le texte avec la voix
+  let boucle = 0;
   function suivre() {
-    const t = audio.currentTime;
+    cancelAnimationFrame(boucle);          // une seule boucle, même après plusieurs seeked
+    const t = glisse ? +barre.value : audio.currentTime;
     let lo = 0, hi = mots.length - 1, i = -1;
     while (lo <= hi) {                     // dernier mot commencé avant t
       const m = (lo + hi) >> 1;
@@ -238,11 +248,18 @@
         if (r.top < 80 || r.bottom > innerHeight - 80) s.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     }
-    if (!audio.paused) requestAnimationFrame(suivre);
+    if (!audio.paused) boucle = requestAnimationFrame(suivre);
   }
-  audio.addEventListener('play', () => requestAnimationFrame(suivre));
+  audio.addEventListener('play', suivre);
   audio.addEventListener('seeked', suivre);
-  barre.oninput = () => { audio.currentTime = barre.value; };
+  // le doigt sur la barre : le mot surligné suit le glissement ; au lâcher, l'audio y va
+  const aller = () => { glisse = false; audio.currentTime = +barre.value; majTemps(); suivre(); };
+  const lacher = () => { if (glisse) aller(); };
+  barre.addEventListener('pointerdown', () => { glisse = true; });
+  barre.addEventListener('touchstart', () => { glisse = true; }, { passive: true });
+  for (const e of ['pointerup', 'pointercancel', 'touchend', 'touchcancel']) addEventListener(e, lacher);
+  barre.oninput = () => { if (glisse) { majTemps(); suivre(); } else aller(); };   // sans doigt : clavier
+  barre.onchange = aller;
 
   $('vitesses').onclick = e => {
     const b = e.target.closest('[data-v]');
@@ -262,7 +279,7 @@
   if (ms) {
     const recule = s => { audio.currentTime = Math.max(0, audio.currentTime - s); };
     const actions = {
-      play: () => audio.play(),
+      play: lire,
       pause: () => audio.pause(),
       seekbackward: e => recule(e.seekOffset || 5),
       seekforward: e => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (e.seekOffset || 5)); },
