@@ -108,7 +108,9 @@ async def main(voix, debit):
     silences = {s: silence(s) for s in PAUSES.values()}
 
     # EN_PREMIER, puis les autres textes d'entraînement, puis les annales par année
-    ordre = lambda f: (f.stem not in EN_PREMIER, not f.stem.startswith('entrainement'), f.stem)
+    # tri « naturel » : entrainement-10 après entrainement-9 (pas avant entrainement-5)
+    naturel = lambda nom: [int(x) if x.isdigit() else x for x in re.split(r'(\d+)', nom)]
+    ordre = lambda f: (f.stem not in EN_PREMIER, not f.stem.startswith('entrainement'), naturel(f.stem))
     for f in sorted(TEXTES.glob('*.txt'), key=ordre):
         titre, _, texte = f.read_text(encoding='utf-8').strip().partition('\n')
         texte = texte.strip()
