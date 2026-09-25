@@ -9,13 +9,13 @@
   :root {
     --bg: #f6f4ef; --card: #fff; --txt: #1d1c1a; --mute: #77736b;
     --line: #e3dfd6; --accent: #2f5bd3; --accent-txt: #fff;
-    --faint: #b8b4ab; --surligne: #cfe0ff;
+    --faint: #b8b4ab; --surligne: #cfe0ff; --violet: #7c3aed; --violet-txt: #fff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #151514; --card: #1f1f1d; --txt: #ecebe7; --mute: #9a968d;
       --line: #33322f; --accent: #7d9cff; --accent-txt: #0d0d0c;
-      --faint: #5e5c57; --surligne: #29406e;
+      --faint: #5e5c57; --surligne: #29406e; --violet: #a78bfa; --violet-txt: #1a1033;
     }
   }
   * { box-sizing: border-box; }
@@ -56,7 +56,7 @@
   .row { display: flex; align-items: center; gap: 12px; }
   .play {
     width: 56px; height: 56px; flex: none; border: 0; border-radius: 50%;
-    background: var(--accent); color: var(--accent-txt); cursor: pointer;
+    background: var(--violet); color: var(--violet-txt); cursor: pointer;
     display: grid; place-items: center;
   }
   .play svg { width: 24px; height: 24px; fill: currentColor; }
