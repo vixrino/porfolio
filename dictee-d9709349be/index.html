@@ -211,9 +211,9 @@
     majListe();
     $('fait').checked = !!faites[d.id];
     audio.src = d.audio;
-    audio.playbackRate = vitesse;          // src réinitialise la vitesse
+    audio.defaultPlaybackRate = audio.playbackRate = vitesse;   // src réinitialise la vitesse
     afficherTexte(d, []);
-    fetch(d.mots).then(r => r.json()).then(b => { if (DICTEES[courant] === d) afficherTexte(d, b); }).catch(() => {});
+    fetch(d.mots).then(r => r.json()).then(b => { if (DICTEES[courant]?.id === d.id) afficherTexte(d, b); }).catch(() => {});
     $('texte').hidden = true;
     $('voir').setAttribute('aria-expanded', 'false');
     $('voir').textContent = 'Afficher le texte (correction)';
@@ -272,21 +272,39 @@
     const xml = await (await jszip.loadAsync(f)).file('word/document.xml').async('string');
     const doc = new DOMParser().parseFromString(xml, 'application/xml');
     const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-    return [...doc.getElementsByTagNameNS(W, 'p')].map(p =>
-      [...p.getElementsByTagNameNS(W, '*')].map(el =>
-        el.localName === 't' ? el.textContent : el.localName === 'tab' ? '\t' : el.localName === 'br' ? '\n' : ''
-      ).join('').trim()
-    ).filter(Boolean).join('\n\n');
+    // mc:Fallback = copie de secours d'une zone de texte (déjà lue dans mc:Choice) ;
+    // un paragraphe imbriqué (zone de texte) est lu pour lui-même, pas dans son parent
+    const dansFallback = el => { for (let n = el.parentNode; n; n = n.parentNode) if (n.localName === 'Fallback') return true; return false; };
+    const texteDe = n => [...n.childNodes].map(el =>
+      el.nodeType !== 1 || el.localName === 'Fallback' || (el.namespaceURI === W && el.localName === 'p') ? '' :
+      el.namespaceURI !== W ? texteDe(el) :
+      ({ t: el.textContent, tab: '\t', br: '\n', cr: '\n', noBreakHyphen: '-' })[el.localName] ?? texteDe(el)
+    ).join('');
+    return [...doc.getElementsByTagNameNS(W, 'p')].filter(p => !dansFallback(p))
+      .map(p => texteDe(p).trim()).filter(Boolean).join('\n\n');
   }
+  // .txt enregistré sous Windows (accents en windows-1252) : sinon les accents deviennent « � »
+  const lireTexte = async f => {
+    const octets = await f.arrayBuffer();
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(octets); }
+    catch { return new TextDecoder('windows-1252').decode(octets); }
+  };
   $('nv-fichier').onchange = async e => {
     const f = e.target.files[0];
     if (!f) return;
     try {
-      $('nv-texte').value = /\.docx$/i.test(f.name) ? await lireDocx(f) : await f.text();
+      $('nv-texte').value = /\.docx$/i.test(f.name) ? await lireDocx(f) : await lireTexte(f);
       if (!$('nv-titre').value) $('nv-titre').value = f.name.replace(/\.[^.]+$/, '');
       etat('nv-etat', '');
     } catch { etat('nv-etat', 'Ce fichier n’a pas pu être lu. Copie-colle le texte à la place.', true); }
     e.target.value = '';
+  };
+
+  // même nettoyage du titre que ajouter.py : sert à reconnaître la dictée quand elle arrive
+  const sousTitre = t => {
+    t = [...t.trim().split(/\s+/).join(' ')].slice(0, 120).join('')
+      .replace(/^dict[ée]e(?:\s*\d+)?(?:\s*[:·—-])?(?=\s|$)\s*/i, '');
+    return t.charAt(0).toUpperCase() + t.slice(1);
   };
 
   $('formulaire').onsubmit = async e => {
@@ -295,6 +313,8 @@
     if (texte.length < 20) return etat('nv-etat', 'Colle un texte ou choisis un fichier.', true);
     $('nv-ok').disabled = true;
     etat('nv-etat', 'Envoi…');
+    // photo « avant » : dictées et workflows déjà là, pour reconnaître ceux de cet ajout
+    const [avant, runs] = await Promise.all([listeEnLigne(), ajoutsGitHub()]);
     try {
       const r = await fetch(RELAIS, {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ texte, titre }),
@@ -302,111 +322,135 @@
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).erreur || `erreur ${r.status}`);
       $('fenetre').close();
       $('nv-titre').value = $('nv-texte').value = '';
-      const attente = { titre, depuis: Date.now(), ids: DICTEES.map(d => d.id) };
-      ecrireAttente(attente);
-      surveiller(attente);
+      ecrireAttentes([...lireAttentes(), {
+        titre: sousTitre(titre), depuis: Date.now(),
+        ids: (avant || DICTEES).map(d => d.id), runs: (runs || []).map(r => r.id),
+      }]);
+      surveiller();
     } catch (err) {
-      etat('nv-etat', 'Échec : ' + err.message, true);
+      // fenêtre fermée pendant l'envoi : l'erreur doit rester visible
+      etat($('fenetre').open ? 'nv-etat' : 'suivi', 'Échec de l’envoi : ' + err.message, true);
     } finally {
       $('nv-ok').disabled = false;
     }
   };
 
-  // --- suivi d'un ajout, qui survit à un rafraîchissement :
-  // l'ajout lancé depuis ce téléphone est mémorisé (localStorage), et GitHub dit à tout
-  // le monde si un ajout tourne ou a échoué ; textes.js relu sans cache dit quand il est en ligne
-  const CLE_AJOUT = 'dictees-ajout-en-cours';
-  const lireAttente = () => { try { return JSON.parse(localStorage.getItem(CLE_AJOUT)); } catch { return null; } };
-  const ecrireAttente = a => {
-    try { a ? localStorage.setItem(CLE_AJOUT, JSON.stringify(a)) : localStorage.removeItem(CLE_AJOUT); } catch {}
+  // --- suivi des ajouts, qui survit à un rafraîchissement :
+  // les ajouts lancés depuis ce téléphone sont mémorisés (localStorage) ; GitHub dit à tout le
+  // monde si un ajout tourne ou a échoué ; chaque dictée arrivée est reconnue par son titre
+  const CLE_AJOUTS = 'dictees-ajouts-en-cours';
+  const lireAttentes = () => { try { return JSON.parse(localStorage.getItem(CLE_AJOUTS)) || []; } catch { return []; } };
+  const ecrireAttentes = l => {
+    try { l.length ? localStorage.setItem(CLE_AJOUTS, JSON.stringify(l)) : localStorage.removeItem(CLE_AJOUTS); } catch {}
   };
+  const lireListe = js => JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1));
   async function listeEnLigne() {
-    try {
-      const js = await (await fetch('textes.js?t=' + Date.now(), { cache: 'no-store' })).text();
-      return JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1));
-    } catch { return null; }
+    try { return lireListe(await (await fetch('textes.js?t=' + Date.now(), { cache: 'no-store' })).text()); }
+    catch { return null; }
   }
   function integrer(liste) {                 // la liste en ligne remplace celle chargée (peut-être en cache)
     const id = DICTEES[courant]?.id;
     window.DICTEES = liste;
     construireListe();
-    courant = Math.max(0, DICTEES.findIndex(d => d.id === id));
-    majListe();
+    const i = DICTEES.findIndex(d => d.id === id);
+    if (i < 0) charger(0);                   // la dictée affichée a été supprimée entre-temps
+    else { courant = i; majListe(); }
   }
+  // null = GitHub ne répond pas (limite de 60 requêtes / h sans compte) : on continue sans
   async function ajoutsGitHub() {
     try {
-      const r = await fetch('https://api.github.com/repos/vixrino/porfolio/actions/workflows/dictee.yml/runs?per_page=5');
-      return (await r.json()).workflow_runs || [];
-    } catch { return []; }
+      const r = await fetch('https://api.github.com/repos/vixrino/porfolio/actions/workflows/dictee.yml/runs?per_page=10', { cache: 'no-store' });
+      return r.ok ? (await r.json()).workflow_runs : null;
+    } catch { return null; }
   }
 
-  // dès que le workflow a enregistré la dictée, on la lit directement dans le dépôt GitHub
+  // dès qu'un workflow a enregistré une dictée, on la lit directement dans le dépôt GitHub
   // (commit précis, jamais en cache) sans attendre les ~45 s de republication de GitHub Pages
-  async function listeDuDepot() {
+  async function listeDuDepot(connues) {
     try {
       const api = 'https://api.github.com/repos/vixrino/porfolio/commits?path=dictee-d9709349be/textes.js&per_page=1';
       const [{ sha }] = await (await fetch(api, { cache: 'no-store' })).json();
       const base = `https://raw.githubusercontent.com/vixrino/porfolio/${sha}/dictee-d9709349be/`;
-      const js = await (await fetch(base + 'textes.js')).text();
-      return { base, liste: JSON.parse(js.slice(js.indexOf('['), js.lastIndexOf(']') + 1)) };
+      const liste = lireListe(await (await fetch(base + 'textes.js')).text());
+      await Promise.all(liste.filter(d => !connues.has(d.id)).map(async d => {
+        const r = await fetch(base + d.audio);
+        if (!r.ok) throw new Error(r.status);
+        d.audio = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'audio/mpeg' }));
+        d.mots = base + d.mots;
+      }));
+      return liste;
     } catch { return null; }
   }
 
+  const rienCommence = () => audio.paused && (audio.currentTime < 0.5 || audio.ended);
+  const pause = ms => new Promise(ok => setTimeout(ok, ms));
   let surveillance = false;
-  function surveiller(attente) {             // attente = ajout lancé ici ; null = lancé par quelqu'un d'autre
+  async function surveiller() {
     if (surveillance) return;
     surveillance = true;
-    const depuis = attente?.depuis || Date.now();
-    const connues = new Set(attente?.ids || DICTEES.map(d => d.id));
-    const fenetre = attente ? depuis - 120e3 : depuis - 10 * 60e3;   // workflows qui concernent ce suivi
-    const nom = attente?.titre ? `« ${attente.titre} »` : 'Une nouvelle dictée';
-    const fin = (msg, erreur) => { surveillance = false; if (attente) ecrireAttente(null); etat('suivi', msg, erreur); };
-    const tour = async () => {
-      const min = Math.floor((Date.now() - depuis) / 60e3);
-      etat('suivi', `⏳ ${nom} est en cours d’ajout (${min ? `depuis ${min} min` : 'à l’instant'}, environ 30 s au total)…`);
-      let liste = await listeEnLigne();
-      let arrivees = liste?.filter(d => !connues.has(d.id)) || [];
+    const lus = new Set();                   // workflows réussis déjà lus dans le dépôt
+    const attribues = new Set();             // workflows en échec déjà signalés
+    let vus = null, dernier = null;          // workflows déjà finis au démarrage ; dernier message
+    for (;;) {
+      let attentes = lireAttentes();
+      for (const a of attentes.filter(a => Date.now() - a.depuis > 20 * 60e3))
+        dernier = [`${a.titre ? `« ${a.titre} »` : 'La dictée'} n’est toujours pas arrivée : réessaie de l’ajouter.`, true];
+      attentes = attentes.filter(a => Date.now() - a.depuis <= 20 * 60e3);
+
       const runs = await ajoutsGitHub();
-      if (!arrivees.length && runs.some(r => r.conclusion === 'success' && Date.parse(r.created_at) > fenetre)) {
-        const depot = await listeDuDepot();
-        arrivees = depot?.liste.filter(d => !connues.has(d.id)) || [];
-        try {
-          // raw.githubusercontent sert le mp3 en « octet-stream » : on le repasse en audio/mpeg
-          await Promise.all(arrivees.map(async d => {
-            const mp3 = await (await fetch(depot.base + d.audio)).arrayBuffer();
-            d.audio = URL.createObjectURL(new Blob([mp3], { type: 'audio/mpeg' }));
-            d.mots = depot.base + d.mots;
-          }));
-          liste = depot?.liste;
-        } catch { arrivees = []; }
+      vus ||= runs && new Set(runs.filter(r => r.status === 'completed').map(r => r.id));
+      const actifs = runs?.filter(r => r.status !== 'completed') || [];
+      const aLire = runs?.filter(r => r.conclusion === 'success' && !lus.has(r.id)
+        && (!vus?.has(r.id) || attentes.some(a => !a.runs.includes(r.id)))) || [];
+
+      let liste = await listeEnLigne();
+      if (aLire.length) {
+        const depot = await listeDuDepot(new Set((liste || DICTEES).map(d => d.id)));
+        if (depot) { liste = depot; aLire.forEach(r => lus.add(r.id)); }
       }
-      const arrivee = arrivees.pop();
-      if (arrivee) {
-        integrer(liste);
-        if (attente && audio.paused) charger(DICTEES.findIndex(d => d.id === arrivee.id));
-        return fin(`✓ « ${arrivee.titre} » est prête.`);
+      if (liste && liste.some(d => !DICTEES.some(x => x.id === d.id))) integrer(liste);
+
+      // chaque ajout attendu : arrivé (reconnu par son titre) ? en échec ?
+      attentes = attentes.filter(a => {
+        const d = DICTEES.find(d => !a.ids.includes(d.id) && d.titre.replace(/^Dictée \d+ ?/, '') === a.titre);
+        if (d) {
+          if (rienCommence()) charger(DICTEES.indexOf(d));   // ne coupe pas une dictée commencée
+          dernier = [`✓ « ${d.titre} » est prête.`];
+          return false;
+        }
+        const echec = runs?.find(r => r.status === 'completed' && r.conclusion !== 'success'
+          && !a.runs.includes(r.id) && !attribues.has(r.id));
+        if (echec) {
+          attribues.add(echec.id);
+          dernier = [`L’ajout ${a.titre ? `de « ${a.titre} » ` : ''}a échoué. Réessaie.`, true];
+          return false;
+        }
+        return true;
+      });
+      ecrireAttentes(attentes);
+
+      if (attentes.length) {
+        const min = Math.floor((Date.now() - Math.min(...attentes.map(a => a.depuis))) / 60e3);
+        const noms = attentes.map(a => a.titre ? `« ${a.titre} »` : 'une dictée').join(', ');
+        etat('suivi', `⏳ Ajout en cours : ${noms} (${min ? `depuis ${min} min` : 'à l’instant'}, 30 s à 1 min en général)…`
+          + (runs ? '' : ' GitHub ne répond plus : la dictée apparaîtra quand même, un peu plus tard.'));
+      } else if (actifs.length || aLire.length) {
+        etat('suivi', '⏳ Une nouvelle dictée est en cours d’ajout…');
+      } else {
+        etat('suivi', ...(dernier || ['']));
+        surveillance = false;
+        return;
       }
-      const actif = runs.some(r => r.status !== 'completed');
-      const recents = runs.filter(r => Date.parse(r.created_at) > depuis - 120e3 && r.status === 'completed');
-      if (!actif && recents.some(r => r.conclusion !== 'success'))
-        return fin(`L’ajout ${attente?.titre ? `de « ${attente.titre} » ` : ''}a échoué. Réessaie.`, true);
-      const publieIlYaPeu = runs.some(r => r.conclusion === 'success' && Date.now() - Date.parse(r.updated_at) < 5 * 60e3);
-      if (!attente && !actif && !publieIlYaPeu) return fin('');
-      if (Date.now() - depuis > 20 * 60e3)
-        return fin('La dictée n’est toujours pas arrivée : réessaie de l’ajouter.', true);
-      setTimeout(tour, 8e3);
-    };
-    tour();
+      await pause(15e3);
+    }
   }
 
-  // au chargement : reprendre un ajout en cours, et rattraper une liste en cache périmée
+  // au chargement : rattraper une liste en cache périmée, reprendre les ajouts en cours
   (async () => {
-    const attente = lireAttente();
-    if (attente && Date.now() - attente.depuis < 20 * 60e3) return surveiller(attente);
-    ecrireAttente(null);
+    try { localStorage.removeItem('dictees-ajout-en-cours'); } catch {}   // ancien format
     const liste = await listeEnLigne();
     if (liste && liste.some(d => !DICTEES.some(x => x.id === d.id))) integrer(liste);
-    if ((await ajoutsGitHub()).some(r => r.status !== 'completed')) surveiller(null);
+    surveiller();
   })();
 
   // l'icône suit toujours l'état réel de l'audio (lecture, pause, fin, retour au début, écran verrouillé)
@@ -431,9 +475,11 @@
     $('temps').textContent = `${fmt(glisse ? +barre.value : audio.currentTime)} / ${fmt(audio.duration)}`;
   };
   audio.ontimeupdate = audio.onloadedmetadata = majTemps;
+  for (const e of ['emptied', 'durationchange']) audio.addEventListener(e, majTemps);
 
   // surligne le mot en cours de lecture et fait défiler le texte avec la voix
-  let boucle = 0;
+  let boucle = 0, toucheA = 0;             // toucheA : dernier geste de défilement de l'utilisateur
+  for (const e of ['touchstart', 'wheel']) addEventListener(e, () => { toucheA = Date.now(); }, { passive: true });
   function suivre() {
     cancelAnimationFrame(boucle);          // une seule boucle, même après plusieurs seeked
     const t = glisse ? +barre.value : audio.currentTime;
@@ -449,7 +495,8 @@
       const s = spans[i];
       if (s && !$('texte').hidden) {
         const r = s.getBoundingClientRect();
-        if (r.top < 80 || r.bottom > innerHeight - 80) s.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        if ((r.top < 80 || r.bottom > innerHeight - 80) && Date.now() - toucheA > 4000)
+          s.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     }
     if (!audio.paused) boucle = requestAnimationFrame(suivre);
@@ -468,7 +515,7 @@
   $('vitesses').onclick = e => {
     const b = e.target.closest('[data-v]');
     if (!b) return;
-    vitesse = audio.playbackRate = BASE * b.dataset.v;   // la hauteur de la voix est préservée
+    vitesse = audio.defaultPlaybackRate = audio.playbackRate = BASE * b.dataset.v;   // la hauteur de la voix est préservée
     for (const x of $('vitesses').querySelectorAll('[data-v]')) x.setAttribute('aria-pressed', x === b);
   };
 
@@ -497,16 +544,15 @@
       if (!audio.duration) return;
       try { navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate, position: audio.currentTime }); } catch {}
     };
-    audio.addEventListener('loadedmetadata', etat);
-    audio.addEventListener('ratechange', etat);
-    audio.addEventListener('seeked', etat);
+    for (const e of ['loadedmetadata', 'durationchange', 'ratechange', 'seeked', 'play', 'pause'])
+      audio.addEventListener(e, etat);
   }
 
-  // après un clic, le bouton garde le focus et Espace le re-cliquerait
-  document.addEventListener('click', e => e.target.closest('button')?.blur());
+  // raccourcis clavier (ordinateur) : jamais dans la fenêtre d'ajout, un champ ou sur un bouton
+  // (Espace y garde son rôle normal)
   document.onkeydown = e => {
     if (e.code === 'Escape') ouvrir(false);
-    if (e.target.matches('input, textarea')) return;
+    if (e.target.closest('dialog, input, textarea, button, [role=option]')) return;
     if (e.code === 'Space') { e.preventDefault(); play.click(); }
     if (e.code === 'ArrowLeft') { e.preventDefault(); $('recul').click(); }
   };
