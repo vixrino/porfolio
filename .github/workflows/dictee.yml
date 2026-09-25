@@ -1,0 +1,29 @@
+# « Ajouter un texte » sur la page des dictées : le Worker Cloudflare (dictee-d9709349be/relais)
+# envoie un repository_dispatch avec le texte ; ici on génère l'audio et on met en ligne.
+name: Ajouter une dictée
+on:
+  repository_dispatch:
+    types: [ajouter-dictee]
+permissions:
+  contents: write
+  pages: write
+concurrency: dictees          # un ajout à la fois, dans l'ordre
+jobs:
+  ajouter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install edge-tts lameenc
+      - name: Texte → audio → commit
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python dictee-d9709349be/ajouter.py
+      - name: Republier le site
+        # un push fait avec le token d'Actions ne relance pas toujours GitHub Pages
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || true
+        env: { GH_TOKEN: '${{ github.token }}' }
