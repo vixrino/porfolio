@@ -83,7 +83,7 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
     <button id="clear">Clear</button>
-    <button id="ask" aria-pressed="false">Answer</button>
+    <button id="ask" aria-label="Change mode">Live</button>
     <div id="status"></div>
   </div>
 </main>
@@ -111,11 +111,14 @@
   let answer = '', answering = false, ctrl = null;   // réponse IA affichée à la place de la question
   // V2 : on n'affiche jamais la question, seulement la réponse (déclenchée après un silence)
   const AUTO_MS = 1800;
-  let v2 = false, autoTimer = null;
+  let v2 = false, autoTimer = null;   // v2 = mains libres (Answer ou Repeat)
+  // Repeat : on affiche la phrase à répéter, on ignore ma répétition, la phrase suivante la remplace
+  let rep = false, target = '', liveNew = '';
   // mémoire de l'échange : contexte, questions, réponses (remise à zéro par Clear)
   let history = [], conv = 0, pending = null, lastAsk = null;
   const MERGE_MS = 8000;   // suite d'une question coupée par une pause : fusion si elle arrive vite
-  try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
+  let mode = 'live';
+  try { mode = localStorage.getItem('oral-mode') || 'live'; } catch {}
 
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
   const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
@@ -145,6 +148,17 @@
     if (h.length <= 12 && asksLikeQuestion(h) && tHit <= 0.8) return false;
     return bHit >= 0.4 || uHit >= 0.8;
   }
+  function isRepeat(q) {
+    const a = words(target), h = words(q);
+    if (!a.length) return false;
+    if (!h.length) return true;
+    const uni = new Set(a), bi = new Set(a.slice(1).map((w, i) => a[i] + ' ' + w));
+    const uHit = h.filter((w) => uni.has(w)).length / h.length;
+    if (h.length < 3) return uHit >= 0.5;
+    const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
+    const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
+    return bHit >= 0.4 || uHit >= 0.7;
+  }
   const heard = () => join(join(committed, sessFinal), sessInterim).trim();
 
   // oublie ce qui a été entendu sans couper l'écoute (pas de relance = pas de mots perdus)
@@ -158,6 +172,12 @@
     const q = heard();
     consumeHeard();
     if (!q) return;
+    if (rep) {
+      liveNew = '';
+      if (isRepeat(q)) say('You ✓');
+      else { target = q; say('New'); }
+      render(); return;
+    }
     if (isEcho(q)) { if (lastAsk) lastAsk.echoed = true; say('You ✓'); return; }
     ask(q);
   }
@@ -203,6 +223,12 @@
 
   function render() {
     if (errMsg) { text.textContent = errMsg; fit(true); return; }   // erreur affichée en grand
+    if (rep) {
+      text.classList.remove('answer');
+      text.textContent = liveNew || target;
+      text.dataset.ph = listening ? 'Listening…' : 'Repeat mode: tap the mic — it shows each sentence to repeat.';
+      fit(); return;
+    }
     const showAnswer = answering || answer;
     text.classList.toggle('answer', !!showAnswer);
     if (showAnswer) { text.textContent = answer.trim() || '…'; fit(); return; }
@@ -294,6 +320,12 @@
       if (skipWords) { sessFinal = all.slice(skipFrom(all)).join(' '); sessInterim = ''; }   // V2 : déjà traité
       else { sessFinal = f; sessInterim = i; }
       retryDelay = 250;
+      // Repeat : une nouvelle phrase s'affiche en direct dès 3 mots, sauf si c'est moi qui répète
+      if (rep) {
+        const h = heard();
+        if (!liveNew && words(h).length >= 3 && !isRepeat(h)) curPx = 999;
+        if (liveNew || (words(h).length >= 3 && !isRepeat(h))) liveNew = h;
+      }
       render();
       if (v2 && heard()) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening && v2) endSegment(); }, AUTO_MS); }
       clearTimeout(stallTimer);
@@ -340,7 +372,7 @@
   function clearText() {
     committed = ''; sessFinal = ''; sessInterim = ''; curPx = 999;
     try { ctrl?.abort(); } catch {}
-    ctrl = null; answer = ''; answering = false;
+    ctrl = null; answer = ''; answering = false; target = ''; liveNew = '';
     // la session en cours renverrait tout son texte : on la jette
     if (running) {
       dropNext = true;
@@ -466,30 +498,34 @@
     const q = v2 ? heard() : '';
     if (v2) { if (running) dropNext = true; consumeHeard(); }   // sinon onend la remettrait de côté
     stop();
+    if (rep) { if (q && !isRepeat(q)) target = q; liveNew = ''; render(); return; }
     if (q && !isEcho(q)) ask(q);
   };
   // Clear = nouveau contexte : on oublie tout l'échange
-  $('clear').onclick = () => { conv++; history = []; pending = null; lastAsk = null; clearText(); say(v2 ? 'New context' : ''); };
+  $('clear').onclick = () => { conv++; history = []; pending = null; lastAsk = null; clearText(); say(v2 && !rep ? 'New context' : ''); };
 
   const askBtn = $('ask');
-  function setV2(on) {
-    v2 = on;
-    askBtn.classList.toggle('on', on);
-    askBtn.setAttribute('aria-pressed', on);
-    askBtn.textContent = on ? 'Repeat' : 'Answer';
-    try { localStorage.setItem('oral-v2', on ? '1' : '0'); } catch {}
+  // un seul bouton qui fait défiler les modes : Live → Answer → Repeat
+  const MODES = { live: 'Live', answer: 'Answer', repeat: 'Repeat' };
+  function setMode(m) {
+    mode = MODES[m] ? m : 'live';
+    v2 = mode !== 'live'; rep = mode === 'repeat';
+    askBtn.classList.toggle('on', v2);
+    askBtn.textContent = MODES[mode];
+    try { localStorage.setItem('oral-mode', mode); } catch {}
   }
   askBtn.onclick = () => {
-    setV2(!v2);
+    setMode(mode === 'live' ? 'answer' : mode === 'answer' ? 'repeat' : 'live');
     clearTimeout(autoTimer); clearTimeout(clipTimer);
-    if (listening) {
-      if (v2) consumeHeard();                         // on part d'une page blanche en mains libres
-      else clipTimer = setTimeout(stop, MAX_CLIP_MS);
-    } else if (v2 && heard()) { const q = heard(); consumeHeard(); ask(q); return; }   // question déjà là : on répond
-    if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; if (!status.classList.contains('err')) say(listening ? 'Listening…' : ''); }
+    // on repart d'un écran vide dans le nouveau mode (l'échange Answer reste en mémoire jusqu'à Clear)
+    try { ctrl?.abort(); } catch {}
+    ctrl = null; answer = ''; answering = false; target = ''; liveNew = '';
+    consumeHeard();
+    if (listening && !v2) clipTimer = setTimeout(stop, MAX_CLIP_MS);
+    if (!status.classList.contains('err')) say(listening ? 'Listening…' : '');
     render();
   };
-  setV2(v2);
+  setMode(mode);
   render();
 </script>
 </body>
