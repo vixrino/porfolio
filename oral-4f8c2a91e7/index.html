@@ -322,7 +322,7 @@
   function showLive(t) {
     if (!rep || !t) return;
     const isNew = words(t).length >= 3 && !isRepeat(t);
-    if (!liveNew && isNew) curPx = 999;
+    if (!liveNew && isNew) { curPx = 999; say('New'); }
     if (liveNew || isNew) { liveNew = t; render(); }
   }
 
