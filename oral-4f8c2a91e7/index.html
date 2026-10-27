@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111112" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+<title>Live Transcribe</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --fg: #1a1a1a; --muted: #8a8a85; --card: #ffffff;
+    --accent: #e5484d; --border: #e4e4e0; --size: 1.35rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111112; --fg: #ededed; --muted: #77777a; --card: #1b1b1d; --border: #2a2a2d; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  main { width: 100%; max-width: 720px; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .bar .group { display: flex; gap: 6px; }
+  #transcript {
+    flex: 1; min-height: 40vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; font-size: var(--size); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  #transcript:empty::before { content: "Appuie sur le micro et parle en anglais…"; color: var(--muted); }
+  .interim { color: var(--muted); }
+  .controls { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  #mic {
+    width: 96px; height: 96px; border-radius: 50%; border: none; cursor: pointer; flex: none;
+    background: var(--fg); color: var(--bg); display: grid; place-items: center;
+    transition: transform .15s, background .2s; touch-action: manipulation;
+  }
+  #mic:active { transform: scale(.95); }
+  #mic:disabled { opacity: .35; cursor: not-allowed; }
+  #mic.on { background: var(--accent); color: #fff; animation: pulse 1.4s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(229,72,77,.5)} 70%{box-shadow:0 0 0 18px rgba(229,72,77,0)} 100%{box-shadow:0 0 0 0 rgba(229,72,77,0)} }
+  button.small, select {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .9rem; cursor: pointer;
+    min-height: 44px; touch-action: manipulation;
+  }
+  select { appearance: none; -webkit-appearance: none; padding-right: 14px; }
+  #status { text-align: center; color: var(--muted); font-size: .9rem; min-height: 1.4em; }
+  #status.err { color: var(--accent); }
+  .hint { text-align: center; color: var(--muted); font-size: .8rem; }
+  @media (hover: none) { .hint { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="bar">
+    <select id="lang" aria-label="Accent">
+      <option value="en-US">🇺🇸 en-US</option>
+      <option value="en-GB">🇬🇧 en-GB</option>
+    </select>
+    <div class="group">
+      <button class="small" id="smaller" aria-label="Texte plus petit">A−</button>
+      <button class="small" id="bigger" aria-label="Texte plus grand">A+</button>
+    </div>
+  </div>
+  <div id="transcript" aria-live="polite"></div>
+  <div id="status"></div>
+  <div class="controls">
+    <button class="small" id="copy">Copier</button>
+    <button class="small" id="dl">.txt</button>
+    <button id="mic" aria-label="Démarrer / arrêter l'écoute">
+      <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+    </button>
+    <button class="small" id="clear">Effacer</button>
+  </div>
+  <div class="hint">Espace = démarrer / arrêter</div>
+</main>
+<script>
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const $ = (id) => document.getElementById(id);
+  const box = $('transcript'), status = $('status'), mic = $('mic'), langSel = $('lang');
+
+  const PAUSE_MS = 2000;            // silence au-delà duquel on passe à la ligne
+  const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
+
+  let committed = '';   // texte validé (sessions précédentes + paragraphes clos)
+  let base = 0;         // premier index de e.results pas encore intégré à committed
+  let sessFinal = '', sessInterim = '';
+  let lastLen = 0, lastHeard = 0;
+  let listening = false, rec = null;
+  let retryDelay = 250, sessionStart = 0, restartTimer = null;
+  let wakeLock = null;
+
+  // --- préférences (localStorage peut être bloqué) ---
+  const store = {
+    get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  let size = parseFloat(store.get('lt-size', '1.35'));
+  const applySize = () => document.documentElement.style.setProperty('--size', size + 'rem');
+  applySize();
+  langSel.value = store.get('lt-lang', 'en-US');
+
+  // ajoute un morceau de texte avec le bon espacement
+  function join(a, b) {
+    b = b.trim();
+    if (!b) return a;
+    if (!a || a.endsWith('\n')) return a + b;
+    return a + ' ' + b;
+  }
+
+  function fullText() { return join(join(committed, sessFinal), sessInterim).trim(); }
+
+  function render() {
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.textContent = join(committed, sessFinal);
+    if (sessInterim.trim()) {
+      const span = document.createElement('span');
+      span.className = 'interim';
+      span.textContent = (box.textContent && !box.textContent.endsWith('\n') ? ' ' : '') + sessInterim.trim();
+      box.appendChild(span);
+    }
+    if (atBottom) box.scrollTop = box.scrollHeight;
+  }
+
+  function say(msg, err = false) { status.textContent = msg; status.classList.toggle('err', err); }
+
+  // --- garder l'écran allumé pendant l'écoute ---
+  async function lockScreen() {
+    try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    if (wakeLock) wakeLock.addEventListener?.('release', () => { wakeLock = null; });
+  }
+  function unlockScreen() { try { wakeLock?.release(); } catch {} wakeLock = null; }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && listening) lockScreen();
+  });
+
+  if (!window.isSecureContext) {
+    say("Le micro exige HTTPS (ou localhost). Ouvre la page via https://", true);
+    mic.disabled = true;
+  } else if (!SR) {
+    say("Navigateur non supporté. Utilise Safari sur iPhone, Chrome sur ordinateur.", true);
+    mic.disabled = true;
+  } else {
+    rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
+    rec.maxAlternatives = 1;
+
+    rec.onstart = () => { sessionStart = Date.now(); say('Écoute en cours…'); };
+
+    rec.onresult = (e) => {
+      const res = e.results;
+      lastLen = res.length;
+      const now = Date.now();
+
+      // longue pause : on fige les résultats finaux et on passe à la ligne
+      if (lastHeard && now - lastHeard > PAUSE_MS) {
+        let i = base;
+        for (; i < res.length && res[i].isFinal; i++) committed = join(committed, res[i][0].transcript);
+        if (i > base && committed && !committed.endsWith('\n')) committed += '\n';
+        base = i;
+      }
+      lastHeard = now;
+
+      // on reconstruit depuis e.results à chaque fois : pas de doublons (Android)
+      sessFinal = ''; sessInterim = '';
+      for (let i = base; i < res.length; i++) {
+        const t = res[i][0].transcript;
+        if (res[i].isFinal) sessFinal = join(sessFinal, t);
+        else sessInterim = join(sessInterim, t);
+      }
+      retryDelay = 250;
+      render();
+    };
+
+    rec.onerror = (e) => {
+      if (FATAL.includes(e.error)) {
+        say(e.error === 'audio-capture' ? 'Aucun micro détecté.' : 'Accès au micro refusé. Autorise-le dans les réglages du navigateur.', true);
+        stop();
+      } else if (e.error === 'network') {
+        say('Réseau indisponible, nouvelle tentative…', true);
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        say('Erreur : ' + e.error, true);
+      }
+    };
+
+    // fin de session (silence, coupure iOS…) : on garde tout, même l'interim, puis on relance
+    rec.onend = () => {
+      committed = join(join(committed, sessFinal), sessInterim);
+      sessFinal = ''; sessInterim = ''; base = 0; lastLen = 0;
+      render();
+      if (!listening) return;
+      // sessions qui meurent tout de suite : on espace les relances
+      retryDelay = Date.now() - sessionStart < 1000 ? Math.min(retryDelay * 2, 4000) : 250;
+      clearTimeout(restartTimer);
+      restartTimer = setTimeout(() => { if (listening) launch(); }, retryDelay);
+    };
+  }
+
+  function launch() {
+    rec.lang = langSel.value;
+    try { rec.start(); } catch {}
+  }
+
+  function start() {
+    if (!rec || listening) return;
+    listening = true;
+    lastHeard = 0;
+    mic.classList.add('on');
+    say('Démarrage…');
+    lockScreen();
+    launch();
+  }
+  function stop() {
+    listening = false;
+    clearTimeout(restartTimer);
+    mic.classList.remove('on');
+    unlockScreen();
+    if (!status.classList.contains('err')) say('');
+    try { rec?.stop(); } catch {}
+  }
+
+  mic.onclick = () => (listening ? stop() : start());
+
+  langSel.onchange = () => {
+    store.set('lt-lang', langSel.value);
+    if (listening) { try { rec.stop(); } catch {} }   // relance auto avec la nouvelle langue
+  };
+
+  $('smaller').onclick = () => { size = Math.max(0.9, +(size - 0.15).toFixed(2)); store.set('lt-size', size); applySize(); };
+  $('bigger').onclick  = () => { size = Math.min(3.5, +(size + 0.15).toFixed(2)); store.set('lt-size', size); applySize(); };
+
+  $('clear').onclick = () => {
+    committed = ''; sessFinal = ''; sessInterim = '';
+    base = lastLen;   // ignore ce qui a déjà été reconnu dans la session en cours
+    render();
+  };
+
+  $('copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(fullText()); say('Copié ✓'); }
+    catch { say('Copie impossible', true); }
+  };
+
+  $('dl').onclick = () => {
+    const blob = new Blob([fullText() + '\n'], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'transcript-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  // espace = démarrer / arrêter (ordinateur)
+  document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space' || e.repeat || e.target.tagName === 'SELECT') return;
+    e.preventDefault();
+    mic.click();
+  });
+  // évite que l'espace "reclique" le bouton qui a le focus
+  document.addEventListener('keyup', (e) => { if (e.code === 'Space') e.preventDefault(); });
+</script>
+</body>
+</html>
