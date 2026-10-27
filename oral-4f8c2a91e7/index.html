@@ -39,7 +39,7 @@
   }
   #text { width: 100%; }
   #text.tiny { overflow-wrap: anywhere; }
-  #text:empty::before { content: "Appuie sur le micro et parle en anglais…"; color: var(--muted); font-weight: 500; }
+  #text:empty::before { content: attr(data-ph); color: var(--muted); font-weight: 500; }
   .interim { color: var(--muted); }
   .side { display: flex; align-items: center; justify-content: center; gap: 16px; }
   #mic {
@@ -57,11 +57,12 @@
     min-height: 44px; touch-action: manipulation;
   }
   #ask {
-    background: var(--answer); color: #fff; border: none;
+    background: transparent; color: var(--answer-txt); border: 2px solid var(--answer);
     border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .9rem; font-weight: 600;
     min-height: 48px; touch-action: manipulation;
   }
   #ask:active { transform: scale(.96); }
+  #ask.on { background: var(--answer); color: #fff; }
   #text.answer { color: var(--answer-txt); }
   #status { color: var(--muted); font-size: .8rem; text-align: center; min-height: 1.2em; }
   #status.err { color: var(--accent); }
@@ -82,7 +83,7 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
     <button id="clear">Effacer</button>
-    <button id="ask">Réponse</button>
+    <button id="ask" aria-pressed="false">Réponse</button>
     <div id="status"></div>
   </div>
 </main>
@@ -106,6 +107,10 @@
   let wakeLock = null, curPx = 999, errMsg = '';
   const RELAIS = 'https://oral-reponse.dictees-d9709349.workers.dev';
   let answer = '', answering = false, ctrl = null;   // réponse IA affichée à la place de la question
+  // V2 : on n'affiche jamais la question, seulement la réponse (déclenchée après un silence)
+  const AUTO_MS = 1800;
+  let v2 = false, autoTimer = null;
+  try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
 
   function join(a, b) {
     b = b.trim();
@@ -135,6 +140,12 @@
     const showAnswer = answering || answer;
     text.classList.toggle('answer', !!showAnswer);
     if (showAnswer) { text.textContent = answer.trim() || '…'; fit(); return; }
+    if (v2) {
+      text.textContent = '';
+      text.dataset.ph = listening ? 'Écoute…' : 'Mode réponse : appuie sur le micro et pose la question.';
+      fit(true); return;
+    }
+    text.dataset.ph = 'Appuie sur le micro et parle en anglais…';
     text.textContent = join(committed, sessFinal);
     if (sessInterim.trim()) {
       const span = document.createElement('span');
@@ -199,6 +210,7 @@
       }
       retryDelay = 250;
       render();
+      if (v2) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening) ask(); }, AUTO_MS); }
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => { if (listening && running) { try { rec.abort(); } catch {} } }, STALL_MS);
     };
@@ -273,7 +285,7 @@
   }
   function stop() {
     listening = false;
-    clearTimeout(restartTimer); clearTimeout(stallTimer); clearTimeout(clipTimer);
+    clearTimeout(restartTimer); clearTimeout(stallTimer); clearTimeout(clipTimer); clearTimeout(autoTimer);
     mic.classList.remove('on');
     unlockScreen();
     if (!status.classList.contains('err')) say('');
@@ -322,9 +334,24 @@
     }
   }
 
-  mic.onclick = () => (listening ? stop() : start());
+  // en V2, arrêter le micro = répondre tout de suite
+  mic.onclick = () => (listening ? (v2 ? ask() : stop()) : start());
   $('clear').onclick = clearText;
-  $('ask').onclick = ask;
+
+  const askBtn = $('ask');
+  function setV2(on) {
+    v2 = on;
+    askBtn.classList.toggle('on', on);
+    askBtn.setAttribute('aria-pressed', on);
+    try { localStorage.setItem('oral-v2', on ? '1' : '0'); } catch {}
+  }
+  askBtn.onclick = () => {
+    setV2(!v2);
+    if (v2 && !listening && join(committed, join(sessFinal, sessInterim)).trim()) { ask(); return; }   // question déjà là : on répond
+    if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; }
+    render();
+  };
+  setV2(v2);
   render();
 </script>
 </body>
