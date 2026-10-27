@@ -83,7 +83,7 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
     <button id="clear">Clear</button>
-    <button id="ask" aria-label="Change mode">Live</button>
+    <button id="ask" aria-label="Change mode">Answer</button>
     <div id="status"></div>
   </div>
 </main>
@@ -117,8 +117,8 @@
   // mémoire de l'échange : contexte, questions, réponses (remise à zéro par Clear)
   let history = [], conv = 0, pending = null, lastAsk = null;
   const MERGE_MS = 8000;   // suite d'une question coupée par une pause : fusion si elle arrive vite
-  let mode = 'live';
-  try { mode = localStorage.getItem('oral-mode') || 'live'; } catch {}
+  let mode = 'answer';
+  try { mode = localStorage.getItem('oral-mode') || 'answer'; } catch {}
 
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
   const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
@@ -505,17 +505,17 @@
   $('clear').onclick = () => { conv++; history = []; pending = null; lastAsk = null; clearText(); say(v2 && !rep ? 'New context' : ''); };
 
   const askBtn = $('ask');
-  // un seul bouton qui fait défiler les modes : Live → Answer → Repeat
-  const MODES = { live: 'Live', answer: 'Answer', repeat: 'Repeat' };
+  // un seul bouton qui bascule entre les deux modes : Answer ↔ Repeat
+  const MODES = { answer: 'Answer', repeat: 'Repeat' };
   function setMode(m) {
-    mode = MODES[m] ? m : 'live';
+    mode = MODES[m] ? m : 'answer';
     v2 = mode !== 'live'; rep = mode === 'repeat';
     askBtn.classList.toggle('on', v2);
     askBtn.textContent = MODES[mode];
     try { localStorage.setItem('oral-mode', mode); } catch {}
   }
   askBtn.onclick = () => {
-    setMode(mode === 'live' ? 'answer' : mode === 'answer' ? 'repeat' : 'live');
+    setMode(mode === 'answer' ? 'repeat' : 'answer');
     clearTimeout(autoTimer); clearTimeout(clipTimer);
     // on repart d'un écran vide dans le nouveau mode (l'échange Answer reste en mémoire jusqu'à Clear)
     try { ctrl?.abort(); } catch {}
