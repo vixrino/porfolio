@@ -19,12 +19,12 @@ export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
     if (req.method !== 'POST') return reponse(200, { ok: true });
-    if (req.headers.get('origin') !== ORIGINE) return reponse(403, { erreur: 'Origine refusée.' });
+    if (req.headers.get('origin') !== ORIGINE) return reponse(403, { erreur: 'Origin not allowed.' });
 
     let question;
-    try { ({ question = '' } = await req.json()); } catch { return reponse(400, { erreur: 'Requête illisible.' }); }
+    try { ({ question = '' } = await req.json()); } catch { return reponse(400, { erreur: 'Unreadable request.' }); }
     question = String(question).trim().slice(0, 1500);
-    if (!/[\p{L}\p{N}]/u.test(question)) return reponse(400, { erreur: 'Question vide.' });
+    if (!/[\p{L}\p{N}]/u.test(question)) return reponse(400, { erreur: 'Empty question.' });
 
     try {
       const flux = await env.AI.run(MODELE, {
@@ -36,7 +36,7 @@ export default {
       // SSE tel quel : « data: {"response":"…"} » … « data: [DONE] »
       return new Response(flux, { headers: { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-cache' } });
     } catch (e) {
-      return reponse(502, { erreur: 'IA indisponible : ' + (e.message || e) });
+      return reponse(502, { erreur: 'AI unavailable: ' + (e.message || e) });
     }
   },
 };

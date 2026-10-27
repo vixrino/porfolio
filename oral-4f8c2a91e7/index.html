@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
@@ -79,11 +79,11 @@
 <main>
   <div id="transcript"><div id="text"></div></div>
   <div class="side">
-    <button id="mic" aria-label="Démarrer / arrêter l'écoute">
+    <button id="mic" aria-label="Start / stop listening">
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
-    <button id="clear">Effacer</button>
-    <button id="ask" aria-pressed="false">Réponse</button>
+    <button id="clear">Clear</button>
+    <button id="ask" aria-pressed="false">Answer</button>
     <div id="status"></div>
   </div>
 </main>
@@ -142,10 +142,10 @@
     if (showAnswer) { text.textContent = answer.trim() || '…'; fit(); return; }
     if (v2) {
       text.textContent = '';
-      text.dataset.ph = listening ? 'Écoute…' : 'Mode réponse : appuie sur le micro et pose la question.';
+      text.dataset.ph = listening ? 'Listening…' : 'Answer mode: tap the mic and ask your question.';
       fit(true); return;
     }
-    text.dataset.ph = 'Appuie sur le micro et parle en anglais…';
+    text.dataset.ph = 'Tap the mic and speak…';
     text.textContent = join(committed, sessFinal);
     if (sessInterim.trim()) {
       const span = document.createElement('span');
@@ -185,10 +185,10 @@
   }
 
   if (!window.isSecureContext) {
-    errMsg = "Le micro exige HTTPS.";
+    errMsg = "The microphone requires HTTPS.";
     mic.disabled = true;
   } else if (!SR) {
-    errMsg = "Reconnaissance vocale indisponible ici. Ouvre le lien directement dans Safari (pas Chrome, ni le navigateur intégré d'une app).";
+    errMsg = "Speech recognition is not available here. Open the link directly in Safari (not Chrome or an in-app browser).";
     mic.disabled = true;
   } else {
     rec = new SR();   // une seule instance (en recréer une peut déclencher un son système sur iOS)
@@ -197,7 +197,7 @@
     rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening) say('Écoute…'); };
+    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening) say('Listening…'); };
 
     rec.onresult = (e) => {
       if (dropNext) return;
@@ -220,17 +220,17 @@
         stop();
         // sur iPhone, la reconnaissance passe par la Dictée iOS : désactivée = service-not-allowed
         const msg = {
-          'service-not-allowed': "Reconnaissance bloquée par iOS. Active la Dictée : Réglages › Général › Clavier › Activer la dictée. Vérifie aussi Réglages › Temps d'écran › Restrictions › Siri & Dictée.",
-          'not-allowed': "Micro refusé. Dans Safari : aA › Réglages du site web › Micro › Autoriser, puis recharge la page.",
-          'audio-capture': "Aucun micro disponible (un appel ou une autre app l'utilise ?).",
+          'service-not-allowed': "Blocked by iOS. Turn on Dictation: Settings › General › Keyboard › Enable Dictation. Also check Settings › Screen Time › Restrictions › Siri & Dictation.",
+          'not-allowed': "Microphone denied. In Safari: aA › Website Settings › Microphone › Allow, then reload the page.",
+          'audio-capture': "No microphone available (is a call or another app using it?).",
         }[e.error];
         errMsg = msg + ' [' + e.error + ']';
         render();
-        say('Erreur', true);
+        say('Error', true);
       } else if (e.error === 'network') {
-        say('Réseau…', true);
+        say('Network…', true);
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        say('Erreur : ' + e.error + (e.message ? ' — ' + e.message : ''), true);
+        say('Error: ' + e.error + (e.message ? ' — ' + e.message : ''), true);
       }
     };
 
@@ -269,15 +269,15 @@
     listening = true; restarts = 0; errMsg = '';
     status.classList.remove('err');
     mic.classList.add('on');
-    say('Démarrage…');
+    say('Starting…');
     lockScreen();
     clearText();          // un appui = un nouveau vocal
     launch();             // si l'ancienne session finit encore, onend relancera
     // Safari muet (ni onstart ni erreur) : on le dit au lieu de rester bloqué
     setTimeout(() => {
       if (listening && !running && !errMsg) {
-        errMsg = "Safari n'a pas démarré l'écoute. Active la Dictée (Réglages › Général › Clavier), puis recharge la page. [no-start]";
-        stop(); render(); say('Erreur', true);
+        errMsg = "Safari did not start listening. Turn on Dictation (Settings › General › Keyboard), then reload the page. [no-start]";
+        stop(); render(); say('Error', true);
       }
     }, 4000);
     clearTimeout(clipTimer);
@@ -297,11 +297,11 @@
   async function ask() {
     const q = join(join(committed, sessFinal), sessInterim).trim();
     if (listening) stop();
-    if (!q) { say('Aucune question', true); return; }
+    if (!q) { say('No question', true); return; }
     try { ctrl?.abort(); } catch {}
     const my = ctrl = new AbortController();
     errMsg = ''; answer = ''; answering = true; curPx = 999;
-    say('Réponse…'); render();
+    say('Answering…'); render();
     try {
       const r = await fetch(RELAIS, {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -327,8 +327,8 @@
       say('');
     } catch (e) {
       if (e.name === 'AbortError') return;
-      if (!answer) answer = '⚠ ' + (e.message || 'Réseau indisponible');
-      say('Erreur', true);
+      if (!answer) answer = '⚠ ' + (e.message || 'Network unavailable');
+      say('Error', true);
     } finally {
       if (ctrl === my) { ctrl = null; answering = false; render(); }
     }
@@ -343,6 +343,7 @@
     v2 = on;
     askBtn.classList.toggle('on', on);
     askBtn.setAttribute('aria-pressed', on);
+    askBtn.textContent = on ? 'Repeat' : 'Answer';
     try { localStorage.setItem('oral-v2', on ? '1' : '0'); } catch {}
   }
   askBtn.onclick = () => {
