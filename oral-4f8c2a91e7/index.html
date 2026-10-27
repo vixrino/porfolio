@@ -88,24 +88,11 @@
   </div>
 </main>
 <script>
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const $ = (id) => document.getElementById(id);
   const box = $('transcript'), text = $('text'), status = $('status'), mic = $('mic');
-
-  const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
   const MIN_PX = 18;
-  const MAX_RESTARTS = 3;      // sessions qui meurent aussitôt, tolérées par vocal (V1)
-  const STALL_MS = 5000;       // iOS peut se figer sans onend : on relance après 5 s sans résultat
-  const MAX_CLIP_MS = 25000;   // vocaux ≤ 20 s : arrêt de sécurité (V1)
-
-  let committed = '';   // texte des sessions précédentes (après une coupure iOS)
-  let sessFinal = '', sessInterim = '';
-  let sessWords = 0, skipWords = 0;   // mots de la session en cours / déjà traités (V2)
-  let sessTail = [], skipTail = [];    // derniers mots, pour se recaler si iOS réécrit le début
-  let listening = false, running = false, started = false, rec = null;
-  let dropNext = false, freeRestart = false, restarts = 0;
-  let retryDelay = 250, sessionStart = 0;
-  let restartTimer = null, stallTimer = null, clipTimer = null, noStartTimer = null, launchTimer = null;
+  const committed = '', sessFinal = '', sessInterim = '';   // (ancien mode Live, plus utilisé par render)
+  let listening = false;
   let wakeLock = null, curPx = 999, errMsg = '';
   const RELAIS = 'https://oral-reponse.dictees-d9709349.workers.dev';
   let answer = '', answering = false, ctrl = null;   // réponse IA affichée à la place de la question
@@ -119,6 +106,7 @@
   const MERGE_MS = 8000;   // suite d'une question coupée par une pause : fusion si elle arrive vite
   let mode = 'answer';
   try { mode = localStorage.getItem('oral-mode') || 'answer'; } catch {}
+
 
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
   const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
@@ -158,44 +146,6 @@
     const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
     const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
     return bHit >= 0.4 || uHit >= 0.7;
-  }
-  const heard = () => join(join(committed, sessFinal), sessInterim).trim();
-
-  // oublie ce qui a été entendu sans couper l'écoute (pas de relance = pas de mots perdus)
-  function consumeHeard() {
-    skipWords = sessWords; skipTail = sessTail;
-    committed = ''; sessFinal = ''; sessInterim = '';
-  }
-
-  // fin d'une prise de parole : question ou écho ?
-  function endSegment() {
-    const q = heard();
-    consumeHeard();
-    if (!q) return;
-    if (rep) {
-      liveNew = '';
-      if (isRepeat(q)) say('You ✓');
-      else { target = q; say('New'); }
-      render(); return;
-    }
-    if (isEcho(q)) { if (lastAsk) lastAsk.echoed = true; say('You ✓'); return; }
-    ask(q);
-  }
-
-  const norm = (w) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
-  // iOS peut réécrire des mots déjà traités (« MeshGPT » → « Mesh GPT ») : on se recale sur les derniers mots consommés
-  function skipFrom(all) {
-    const n = all.map(norm);
-    for (const t of [skipTail, skipTail.slice(-2)]) {
-      if (!t.length) continue;
-      const exp = skipWords - t.length;
-      for (let d = 0; d <= 6; d++) {
-        for (const j of d ? [exp + d, exp - d] : [exp]) {
-          if (j >= 0 && j + t.length <= n.length && t.every((w, k) => n[j + k] === w)) return j + t.length;
-        }
-      }
-    }
-    return Math.min(skipWords, all.length);
   }
 
   function join(a, b) {
@@ -264,152 +214,181 @@
   function unlockScreen() { try { wakeLock?.release(); } catch {} wakeLock = null; }
   // iOS exige un geste pour reprendre le verrou : on retente au prochain toucher
   document.addEventListener('touchend', () => { if (listening && !wakeLock) lockScreen(); });
-  // retour après verrouillage / arrière-plan : iOS a pu tuer la reconnaissance, on la relance
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !listening) return;
-    wakeLock = null; lockScreen();
-    if (running) { freeRestart = true; try { rec.abort(); } catch {} }
-    else { clearTimeout(restartTimer); launch(); }
-  });
 
   // pas de zoom (pincer, double-tap)
   ['gesturestart', 'gesturechange', 'dblclick'].forEach((t) =>
     document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
 
-  function launch() {
-    if (!listening || running) return;
-    sessionStart = Date.now();
-    try { rec.start(); } catch {}
-    // start() peut échouer sans rien dire : on retente tant que l'écoute est voulue
-    clearTimeout(launchTimer);
-    launchTimer = setTimeout(() => { if (listening && !running) launch(); }, 3000);
+  // --- micro sans la Dictée iOS (elle joue un son, même en silencieux) : enregistrement direct + détection de parole + Whisper ---
+  const STT = RELAIS + '/stt';
+  const PRE_MS = 400;          // garde le début du mot qui a déclenché la détection
+  const START_MS = 120;        // parole continue minimum pour ouvrir un segment
+  const MAX_SEG_MS = 30000;    // segment trop long : on le coupe
+  const INTERIM_MS = 1000;     // Repeat : retranscription du segment en cours toutes les secondes
+  const endMs = () => (rep ? 1200 : AUTO_MS);   // silence qui clôt une phrase
+  let ac = null, stream = null, src = null, proc = null;
+  let noise = 0.004, inSpeech = false, loudMs = 0, quietMs = 0, segMs = 0;
+  let pre = [], seg = [], segId = 0, interimBusy = false, lastInterim = 0;
+  let queue = Promise.resolve();   // les phrases sont traitées dans l'ordre
+
+  async function startCapture() {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    await ac.resume();
+    src = ac.createMediaStreamSource(stream);
+    proc = ac.createScriptProcessor(4096, 1, 1);
+    proc.onaudioprocess = (e) => onAudio(e.inputBuffer.getChannelData(0));
+    src.connect(proc);
+    proc.connect(ac.destination);   // nécessaire pour que Safari fasse tourner le nœud ; sa sortie reste muette
+    inSpeech = false; loudMs = 0; pre = []; seg = [];
   }
 
-  if (!window.isSecureContext) {
-    errMsg = "The microphone requires HTTPS.";
-    mic.disabled = true;
-  } else if (!SR) {
-    errMsg = "Speech recognition is not available here. Open the link directly in Safari (not Chrome or an in-app browser).";
-    mic.disabled = true;
-  } else {
-    rec = new SR();   // une seule instance (en recréer une peut déclencher un son système sur iOS)
-    rec.lang = 'en-US';
-    rec.continuous = true;
-    rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
-    rec.maxAlternatives = 1;
-
-    rec.onstart = () => {
-      running = true; started = true; sessionStart = Date.now();
-      clearTimeout(launchTimer);
-      const s = status.textContent;
-      if (listening && !answering && (s === '' || s === 'Starting…' || (status.classList.contains('err') && !errMsg))) say('Listening…');
-    };
-
-    rec.onresult = (e) => {
-      if (dropNext) return;
-      // reconstruit depuis e.results à chaque fois : pas de doublons
-      let f = '', i = '';
-      for (let k = 0; k < e.results.length; k++) {
-        const t = e.results[k][0].transcript;
-        if (e.results[k].isFinal) f = join(f, t);
-        else i = join(i, t);
-      }
-      const all = join(f, i).split(/\s+/).filter(Boolean);
-      sessWords = all.length;
-      sessTail = all.slice(-4).map(norm);
-      if (skipWords) { sessFinal = all.slice(skipFrom(all)).join(' '); sessInterim = ''; }   // V2 : déjà traité
-      else { sessFinal = f; sessInterim = i; }
-      retryDelay = 250;
-      // Repeat : une nouvelle phrase s'affiche en direct dès 3 mots, sauf si c'est moi qui répète
-      if (rep) {
-        const h = heard();
-        if (!liveNew && words(h).length >= 3 && !isRepeat(h)) curPx = 999;
-        if (liveNew || (words(h).length >= 3 && !isRepeat(h))) liveNew = h;
-      }
-      render();
-      if (v2 && heard()) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening && v2) endSegment(); }, AUTO_MS); }
-      clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => { if (listening && running) { freeRestart = true; try { rec.abort(); } catch {} } }, STALL_MS);
-    };
-
-    rec.onerror = (e) => {
-      if (FATAL.includes(e.error)) {
-        stop();
-        // sur iPhone, la reconnaissance passe par la Dictée iOS : désactivée = service-not-allowed
-        const msg = {
-          'service-not-allowed': "Blocked by iOS. Turn on Dictation: Settings › General › Keyboard › Enable Dictation. Also check Settings › Screen Time › Restrictions › Siri & Dictation.",
-          'not-allowed': "Microphone denied. In Safari: aA › Website Settings › Microphone › Allow, then reload the page.",
-          'audio-capture': "No microphone available (is a call or another app using it?).",
-        }[e.error];
-        errMsg = msg + ' [' + e.error + ']';
-        render();
-        say('Error', true);
-      } else if (e.error === 'network') {
-        say('Network…', true);
-      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        say('Error: ' + e.error + (e.message ? ' — ' + e.message : ''), true);
-      }
-    };
-
-    // coupure (silence, iOS…) : on garde tout, même l'interim, puis on relance si besoin
-    rec.onend = () => {
-      running = false;
-      clearTimeout(stallTimer);
-      if (dropNext) dropNext = false;
-      else committed = join(join(committed, sessFinal), sessInterim);
-      sessFinal = ''; sessInterim = ''; sessWords = 0; skipWords = 0; sessTail = []; skipTail = [];
-      render();
-      if (!listening) { freeRestart = false; return; }
-      const quick = Date.now() - sessionStart < 1500;
-      if (freeRestart) freeRestart = false;
-      else if (!v2 && quick && ++restarts > MAX_RESTARTS) { stop(); return; }   // seules les sessions mort-nées comptent
-      retryDelay = quick ? Math.min(retryDelay * 2, 4000) : 250;
-      clearTimeout(restartTimer);
-      restartTimer = setTimeout(launch, retryDelay);
-    };
+  function stopCapture(flush) {
+    if (flush && inSpeech) finishSegment();
+    inSpeech = false; seg = []; pre = [];
+    try { proc && (proc.onaudioprocess = null, proc.disconnect()); } catch {}
+    try { src?.disconnect(); } catch {}
+    try { stream?.getTracks().forEach((t) => t.stop()); } catch {}
+    try { ac?.close(); } catch {}
+    ac = stream = src = proc = null;
   }
+
+  // détection de parole : volume au-dessus du bruit de fond qui s'adapte à la pièce
+  function onAudio(buf) {
+    const x = new Float32Array(buf);
+    let sum = 0;
+    for (let i = 0; i < x.length; i++) sum += x[i] * x[i];
+    const rms = Math.sqrt(sum / x.length), ms = (x.length / ac.sampleRate) * 1000;
+    const thr = Math.max(0.01, noise * 3);
+    if (!inSpeech) {
+      if (rms < thr) noise = noise * 0.95 + rms * 0.05;
+      pre.push(x);
+      while (pre.length * ms > PRE_MS) pre.shift();
+      loudMs = rms > thr ? loudMs + ms : 0;
+      if (loudMs >= START_MS) { inSpeech = true; seg = pre; pre = []; quietMs = 0; segMs = 0; segId++; lastInterim = Date.now(); }
+      return;
+    }
+    seg.push(x);
+    segMs += ms;
+    quietMs = rms > thr * 0.7 ? 0 : quietMs + ms;
+    if (quietMs >= endMs() || segMs >= MAX_SEG_MS) finishSegment();
+    else if (rep && !interimBusy && Date.now() - lastInterim >= INTERIM_MS) interim();
+  }
+
+  function finishSegment() {
+    const audio = seg, rate = ac.sampleRate;
+    inSpeech = false; seg = []; loudMs = 0; segId++;   // un interim en vol pour ce segment sera ignoré
+    queue = queue.then(() => transcribe(audio, rate)).then((t) => onHeard(t), () => say('Network…', true));
+  }
+
+  function interim() {
+    const id = segId, rate = ac.sampleRate;
+    interimBusy = true; lastInterim = Date.now();
+    transcribe(seg.slice(), rate).then((t) => { if (id === segId && inSpeech) showLive(t); }, () => {})
+      .finally(() => { interimBusy = false; });
+  }
+
+  // Float32 → WAV 16 kHz mono (ce que Whisper attend)
+  function toWav(chunks, rate) {
+    const n = chunks.reduce((s, c) => s + c.length, 0), all = new Float32Array(n);
+    let o = 0;
+    for (const c of chunks) { all.set(c, o); o += c.length; }
+    const ratio = rate / 16000, len = Math.floor(n / ratio), pcm = new Int16Array(len);
+    for (let i = 0; i < len; i++) {
+      const v = Math.max(-1, Math.min(1, all[Math.floor(i * ratio)]));
+      pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+    }
+    const b = new DataView(new ArrayBuffer(44));
+    const str = (off, s) => [...s].forEach((ch, i) => b.setUint8(off + i, ch.charCodeAt(0)));
+    str(0, 'RIFF'); b.setUint32(4, 36 + pcm.byteLength, true); str(8, 'WAVE'); str(12, 'fmt ');
+    b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+    b.setUint32(24, 16000, true); b.setUint32(28, 32000, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true);
+    str(36, 'data'); b.setUint32(40, pcm.byteLength, true);
+    return new Blob([b, pcm], { type: 'audio/wav' });
+  }
+
+  // phrases que Whisper invente sur du bruit
+  const GHOST = /^(thank you( for watching)?|thanks( for watching)?|you|bye|okay|so|uh|um|\.|…|\s)*[.!?]*$/i;
+  async function transcribe(chunks, rate) {
+    const r = await fetch(STT, { method: 'POST', headers: { 'content-type': 'audio/wav' }, body: toWav(chunks, rate) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || 'HTTP ' + r.status); }
+    const t = ((await r.json()).text || '').trim();
+    return GHOST.test(t) ? '' : t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  // Repeat : la nouvelle phrase s'affiche en direct dès 3 mots, sauf si c'est moi qui répète
+  function showLive(t) {
+    if (!rep || !t) return;
+    const isNew = words(t).length >= 3 && !isRepeat(t);
+    if (!liveNew && isNew) curPx = 999;
+    if (liveNew || isNew) { liveNew = t; render(); }
+  }
+
+  // une phrase complète vient d'être transcrite : nouvelle phrase / question, ou ma propre voix ?
+  function onHeard(q) {
+    if (!q) return;
+    if (rep) {
+      liveNew = '';
+      if (isRepeat(q)) say('You ✓');
+      else { target = q; say('New'); }
+      render(); return;
+    }
+    if (isEcho(q)) { if (lastAsk) lastAsk.echoed = true; say('You ✓'); return; }
+    ask(q);
+  }
+
+  // retour après verrouillage / arrière-plan : iOS a pu couper le micro, on le reprend
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || !listening) return;
+    wakeLock = null; lockScreen();
+    const dead = !stream || stream.getAudioTracks().some((t) => t.readyState === 'ended');
+    if (dead) { stopCapture(false); try { await startCapture(); } catch {} }
+    else { try { await ac.resume(); } catch {} }
+  });
+  // Safari peut suspendre l'audio : un toucher le relance
+  document.addEventListener('touchend', () => { if (listening && ac?.state !== 'running') ac?.resume().catch(() => {}); });
 
   function clearText() {
-    committed = ''; sessFinal = ''; sessInterim = ''; curPx = 999;
+    curPx = 999;
     try { ctrl?.abort(); } catch {}
     ctrl = null; answer = ''; answering = false; target = ''; liveNew = '';
-    // la session en cours renverrait tout son texte : on la jette
-    if (running) {
-      dropNext = true;
-      if (listening) freeRestart = true;
-      try { rec.abort(); } catch {}
-    }
+    segId++;   // les transcriptions en cours sont ignorées
     render();
   }
 
-  function start() {
-    if (!rec || listening) return;
-    listening = true; restarts = 0; errMsg = ''; started = false; freeRestart = false;
+  async function start() {
+    if (listening) return;
+    listening = true; errMsg = '';
     status.classList.remove('err');
     mic.classList.add('on');
     say('Starting…');
     lockScreen();
-    clearText();          // un appui = un nouveau vocal
-    launch();             // si l'ancienne session finit encore, onend relancera
-    // Safari muet (ni onstart ni erreur) pour CET appui : on le dit au lieu de rester bloqué
-    clearTimeout(noStartTimer);
-    noStartTimer = setTimeout(() => {
-      if (listening && !started && !errMsg) {
-        errMsg = "Safari did not start listening. Turn on Dictation (Settings › General › Keyboard), then reload the page. [no-start]";
-        stop(); render(); say('Error', true);
-      }
-    }, 4000);
-    clearTimeout(clipTimer);
-    if (!v2) clipTimer = setTimeout(stop, MAX_CLIP_MS);
+    clearText();
+    try {
+      await startCapture();
+      if (listening) say('Listening…'); else stopCapture(false);
+    } catch (e) {
+      listening = false; mic.classList.remove('on'); unlockScreen();
+      errMsg = e.name === 'NotAllowedError'
+        ? 'Microphone denied. In Safari: aA › Website Settings › Microphone › Allow, then reload the page.'
+        : 'Microphone unavailable (' + (e.message || e.name) + ').';
+      render(); say('Error', true);
+    }
   }
   function stop() {
     listening = false;
-    [restartTimer, stallTimer, clipTimer, autoTimer, noStartTimer, launchTimer].forEach(clearTimeout);
     mic.classList.remove('on');
     unlockScreen();
+    stopCapture(true);   // la phrase en cours est quand même traitée
     if (!status.classList.contains('err') && !answering) say('');
-    try { rec?.stop(); } catch {}
     fit(true);
+  }
+
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    errMsg = 'The microphone requires HTTPS and Safari.';
+    mic.disabled = true;
   }
 
   // envoie la question entendue à l'IA et affiche la réponse au fil de l'eau
@@ -492,15 +471,9 @@
     }
   }
 
-  // en V2, couper le micro traite d'abord ce qui vient d'être entendu
-  mic.onclick = () => {
-    if (!listening) return start();
-    const q = v2 ? heard() : '';
-    if (v2) { if (running) dropNext = true; consumeHeard(); }   // sinon onend la remettrait de côté
-    stop();
-    if (rep) { if (q && !isRepeat(q)) target = q; liveNew = ''; render(); return; }
-    if (q && !isEcho(q)) ask(q);
-  };
+  // couper le micro traite quand même la phrase en cours
+  mic.onclick = () => (listening ? stop() : start());
+
   // Clear = nouveau contexte : on oublie tout l'échange
   $('clear').onclick = () => { conv++; history = []; pending = null; lastAsk = null; clearText(); say(v2 && !rep ? 'New context' : ''); };
 
@@ -516,14 +489,9 @@
   }
   askBtn.onclick = () => {
     setMode(mode === 'answer' ? 'repeat' : 'answer');
-    clearTimeout(autoTimer); clearTimeout(clipTimer);
     // on repart d'un écran vide dans le nouveau mode (l'échange Answer reste en mémoire jusqu'à Clear)
-    try { ctrl?.abort(); } catch {}
-    ctrl = null; answer = ''; answering = false; target = ''; liveNew = '';
-    consumeHeard();
-    if (listening && !v2) clipTimer = setTimeout(stop, MAX_CLIP_MS);
+    clearText();
     if (!status.classList.contains('err')) say(listening ? 'Listening…' : '');
-    render();
   };
   setMode(mode);
   render();

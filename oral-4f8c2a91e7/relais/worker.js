@@ -1,6 +1,9 @@
 // Relais « Réponse » : la page envoie l'échange transcrit (contexte, questions, réponses), Workers AI (gratuit) répond en streaming.
 const ORIGINE = 'https://vixrino.github.io';
 const MODELE = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+const NOVA = '@cf/deepgram/nova-3';                     // transcription sans la Dictée iOS (qui fait du bruit)
+const WHISPER = '@cf/openai/whisper-large-v3-turbo';
+const MAX_AUDIO = 3_000_000;
 const CONSIGNE = `You help someone answer spoken questions out loud, in English, during an oral exchange.
 The exchange usually starts with a CONTEXT (a situation, a role, a text or a case), then questions one after another.
 Messages come from live speech-to-text and may contain recognition errors: infer the intended words.
@@ -45,11 +48,36 @@ const CORS = {
 const reponse = (code, corps) =>
   new Response(JSON.stringify(corps), { status: code, headers: { ...CORS, 'content-type': 'application/json' } });
 
+// WAV envoyé par la page → texte (Whisper)
+async function transcrire(req, env) {
+  const octets = new Uint8Array(await req.arrayBuffer());
+  if (octets.length < 1000) return reponse(200, { text: '' });
+  if (octets.length > MAX_AUDIO) return reponse(413, { erreur: 'Audio too long.' });
+  let bin = '';
+  for (let i = 0; i < octets.length; i += 0x8000) bin += String.fromCharCode(...octets.subarray(i, i + 0x8000));
+  try {
+    let t;
+    try {   // Deepgram Nova-3 : ~0,4 s
+      const r = await env.AI.run(NOVA, { audio: { body: new Blob([octets]).stream(), contentType: 'audio/wav' }, language: 'en' });
+      t = r?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
+    } catch (e) {
+      if (/4006|daily free allocation/i.test(String(e.message || e))) throw e;
+    }
+    if (t == null) t = (await env.AI.run(WHISPER, { audio: btoa(bin), language: 'en' }))?.text;   // secours, plus lent
+    return reponse(200, { text: String(t || '').trim() });
+  } catch (e) {
+    const m = String(e.message || e);
+    if (/4006|daily free allocation/i.test(m)) return reponse(429, { erreur: 'Daily free AI quota used up — it resets at 00:00 UTC.' });
+    return reponse(502, { erreur: 'Transcription unavailable: ' + m });
+  }
+}
+
 export default {
   async fetch(req, env) {
     if (req.method === 'OPTIONS') return new Response(null, { headers: CORS });
     if (req.method !== 'POST') return reponse(200, { ok: true });
     if (req.headers.get('origin') !== ORIGINE) return reponse(403, { erreur: 'Origin not allowed.' });
+    if (new URL(req.url).pathname === '/stt') return transcrire(req, env);
 
     let corps;
     try { corps = await req.json(); } catch { return reponse(400, { erreur: 'Unreadable request.' }); }
