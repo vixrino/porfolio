@@ -94,16 +94,17 @@
 
   const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
   const MIN_PX = 18;
-  const MAX_RESTARTS = 3;      // relances auto par vocal (chaque relance = nouvelle session iOS)
+  const MAX_RESTARTS = 3;      // sessions qui meurent aussitôt, tolérées par vocal (V1)
   const STALL_MS = 5000;       // iOS peut se figer sans onend : on relance après 5 s sans résultat
-  const MAX_CLIP_MS = 25000;   // vocaux ≤ 20 s : arrêt de sécurité
+  const MAX_CLIP_MS = 25000;   // vocaux ≤ 20 s : arrêt de sécurité (V1)
 
   let committed = '';   // texte des sessions précédentes (après une coupure iOS)
   let sessFinal = '', sessInterim = '';
-  let listening = false, running = false, rec = null;
+  let sessWords = 0, skipWords = 0;   // mots de la session en cours / déjà traités (V2)
+  let listening = false, running = false, started = false, rec = null;
   let dropNext = false, freeRestart = false, restarts = 0;
   let retryDelay = 250, sessionStart = 0;
-  let restartTimer = null, stallTimer = null, clipTimer = null;
+  let restartTimer = null, stallTimer = null, clipTimer = null, noStartTimer = null, launchTimer = null;
   let wakeLock = null, curPx = 999, errMsg = '';
   const RELAIS = 'https://oral-reponse.dictees-d9709349.workers.dev';
   let answer = '', answering = false, ctrl = null;   // réponse IA affichée à la place de la question
@@ -111,11 +112,12 @@
   const AUTO_MS = 1800;
   let v2 = false, autoTimer = null;
   // mémoire de l'échange : contexte, questions, réponses (remise à zéro par Clear)
-  let history = [], conv = 0;
+  let history = [], conv = 0, pending = null;
   try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
 
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
   const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
+  const QSTART = new Set([...QWORDS, 'can', 'could', 'would', 'will', 'do', 'does', 'did', 'is', 'are', 'have', 'tell', 'give', 'describe']);
   const words = (s) => s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
   function isEcho(q) {
     const refs = history.filter((m) => m.role === 'assistant' && !/^OK\.?$/i.test(m.content)).slice(-2).map((m) => m.content);
@@ -128,15 +130,21 @@
     const uHit = h.filter((w) => uni.has(w)).length / h.length;
     const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
     const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
+    if (QSTART.has(h[0]) && h.length <= 8 && bHit < 0.6) return false;   // « can you give an example »
     return bHit >= 0.4 || uHit >= 0.8;
   }
   const heard = () => join(join(committed, sessFinal), sessInterim).trim();
 
-  // fin d'une prise de parole : on repart à zéro sans couper l'écoute, puis question ou écho ?
+  // oublie ce qui a été entendu sans couper l'écoute (pas de relance = pas de mots perdus)
+  function consumeHeard() {
+    skipWords = sessWords;
+    committed = ''; sessFinal = ''; sessInterim = '';
+  }
+
+  // fin d'une prise de parole : question ou écho ?
   function endSegment() {
     const q = heard();
-    committed = ''; sessFinal = ''; sessInterim = '';
-    if (running) { dropNext = true; freeRestart = true; try { rec.abort(); } catch {} }
+    consumeHeard();
     if (!q) return;
     if (isEcho(q)) { say('You ✓'); return; }
     ask(q);
@@ -202,8 +210,12 @@
   function unlockScreen() { try { wakeLock?.release(); } catch {} wakeLock = null; }
   // iOS exige un geste pour reprendre le verrou : on retente au prochain toucher
   document.addEventListener('touchend', () => { if (listening && !wakeLock) lockScreen(); });
+  // retour après verrouillage / arrière-plan : iOS a pu tuer la reconnaissance, on la relance
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && listening) { wakeLock = null; lockScreen(); }
+    if (document.visibilityState !== 'visible' || !listening) return;
+    wakeLock = null; lockScreen();
+    if (running) { freeRestart = true; try { rec.abort(); } catch {} }
+    else { clearTimeout(restartTimer); launch(); }
   });
 
   // pas de zoom (pincer, double-tap)
@@ -214,6 +226,9 @@
     if (!listening || running) return;
     sessionStart = Date.now();
     try { rec.start(); } catch {}
+    // start() peut échouer sans rien dire : on retente tant que l'écoute est voulue
+    clearTimeout(launchTimer);
+    launchTimer = setTimeout(() => { if (listening && !running) launch(); }, 3000);
   }
 
   if (!window.isSecureContext) {
@@ -229,22 +244,31 @@
     rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening && !answering && !answer) say('Listening…'); };
+    rec.onstart = () => {
+      running = true; started = true; sessionStart = Date.now();
+      clearTimeout(launchTimer);
+      const s = status.textContent;
+      if (listening && !answering && (s === '' || s === 'Starting…' || (status.classList.contains('err') && !errMsg))) say('Listening…');
+    };
 
     rec.onresult = (e) => {
       if (dropNext) return;
       // reconstruit depuis e.results à chaque fois : pas de doublons
-      sessFinal = ''; sessInterim = '';
-      for (let i = 0; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) sessFinal = join(sessFinal, t);
-        else sessInterim = join(sessInterim, t);
+      let f = '', i = '';
+      for (let k = 0; k < e.results.length; k++) {
+        const t = e.results[k][0].transcript;
+        if (e.results[k].isFinal) f = join(f, t);
+        else i = join(i, t);
       }
+      const all = join(f, i).split(/\s+/).filter(Boolean);
+      sessWords = all.length;
+      if (skipWords) { sessFinal = all.slice(skipWords).join(' '); sessInterim = ''; }   // V2 : déjà traité
+      else { sessFinal = f; sessInterim = i; }
       retryDelay = 250;
       render();
-      if (v2) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening) endSegment(); }, AUTO_MS); }
+      if (v2 && heard()) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening && v2) endSegment(); }, AUTO_MS); }
       clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => { if (listening && running) { try { rec.abort(); } catch {} } }, STALL_MS);
+      stallTimer = setTimeout(() => { if (listening && running) { freeRestart = true; try { rec.abort(); } catch {} } }, STALL_MS);
     };
 
     rec.onerror = (e) => {
@@ -270,14 +294,15 @@
     rec.onend = () => {
       running = false;
       clearTimeout(stallTimer);
-      if (dropNext) { dropNext = false; sessFinal = ''; sessInterim = ''; }
+      if (dropNext) dropNext = false;
       else committed = join(join(committed, sessFinal), sessInterim);
-      sessFinal = ''; sessInterim = '';
+      sessFinal = ''; sessInterim = ''; sessWords = 0; skipWords = 0;
       render();
-      if (!listening) return;
+      if (!listening) { freeRestart = false; return; }
+      const quick = Date.now() - sessionStart < 1500;
       if (freeRestart) freeRestart = false;
-      else if (!v2 && ++restarts > MAX_RESTARTS) { stop(); return; }
-      retryDelay = Date.now() - sessionStart < 1000 ? Math.min(retryDelay * 2, 4000) : 250;
+      else if (!v2 && quick && ++restarts > MAX_RESTARTS) { stop(); return; }   // seules les sessions mort-nées comptent
+      retryDelay = quick ? Math.min(retryDelay * 2, 4000) : 250;
       clearTimeout(restartTimer);
       restartTimer = setTimeout(launch, retryDelay);
     };
@@ -298,16 +323,17 @@
 
   function start() {
     if (!rec || listening) return;
-    listening = true; restarts = 0; errMsg = '';
+    listening = true; restarts = 0; errMsg = ''; started = false; freeRestart = false;
     status.classList.remove('err');
     mic.classList.add('on');
     say('Starting…');
     lockScreen();
     clearText();          // un appui = un nouveau vocal
     launch();             // si l'ancienne session finit encore, onend relancera
-    // Safari muet (ni onstart ni erreur) : on le dit au lieu de rester bloqué
-    setTimeout(() => {
-      if (listening && !running && !errMsg) {
+    // Safari muet (ni onstart ni erreur) pour CET appui : on le dit au lieu de rester bloqué
+    clearTimeout(noStartTimer);
+    noStartTimer = setTimeout(() => {
+      if (listening && !started && !errMsg) {
         errMsg = "Safari did not start listening. Turn on Dictation (Settings › General › Keyboard), then reload the page. [no-start]";
         stop(); render(); say('Error', true);
       }
@@ -317,10 +343,10 @@
   }
   function stop() {
     listening = false;
-    clearTimeout(restartTimer); clearTimeout(stallTimer); clearTimeout(clipTimer); clearTimeout(autoTimer);
+    [restartTimer, stallTimer, clipTimer, autoTimer, noStartTimer, launchTimer].forEach(clearTimeout);
     mic.classList.remove('on');
     unlockScreen();
-    if (!status.classList.contains('err')) say('');
+    if (!status.classList.contains('err') && !answering) say('');
     try { rec?.stop(); } catch {}
     fit(true);
   }
@@ -328,12 +354,25 @@
   // envoie la question entendue à l'IA et affiche la réponse au fil de l'eau
   async function ask(q) {
     if (!q) { say('No question', true); return; }
+    // réponse précédente encore en cours = question coupée par une pause : on fusionne
+    if (answering && pending && pending.conv === conv) {
+      const k = history.indexOf(pending.u);
+      if (k >= 0) { q = join(pending.u.content, q); history.splice(k, 1); }
+    }
     try { ctrl?.abort(); } catch {}
     const my = ctrl = new AbortController(), myConv = conv;
-    history.push({ role: 'user', content: q });
+    const u = { role: 'user', content: q };
+    history.push(u);
+    pending = { u, conv };
     let got = '', ok = false;
     errMsg = ''; answer = ''; answering = true; curPx = 999;
     say('Answering…'); render();
+    const eat = (l) => {
+      if (!l.startsWith('data: ')) return;
+      const d = l.slice(6).trim();
+      if (d === '[DONE]') return;
+      try { const j = JSON.parse(d); got += j.response ?? j.choices?.[0]?.delta?.content ?? ''; } catch {}
+    };
     try {
       const r = await fetch(RELAIS, {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -344,20 +383,17 @@
       let buf = '';
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) { buf += dec.decode(); break; }
         buf += dec.decode(value, { stream: true });
         const lines = buf.split('\n');
         buf = lines.pop();
-        for (const l of lines) {
-          if (!l.startsWith('data: ')) continue;
-          const d = l.slice(6).trim();
-          if (d === '[DONE]') continue;
-          try { got += JSON.parse(d).response || ''; } catch {}
-        }
+        lines.forEach(eat);
         // « OK » = simple contexte : on ne l'affiche pas pendant le streaming
         answer = /^\s*O?K?\.?\s*$/i.test(got) ? '' : got;
         render();
       }
+      eat(buf.trim());
+      answer = /^\s*O?K?\.?\s*$/i.test(got) ? '' : got;
       ok = true;
     } catch (e) {
       if (e.name !== 'AbortError') {
@@ -365,11 +401,13 @@
         say('Error', true);
       }
     } finally {
-      if (conv === myConv) {
-        // garde l'échange cohérent : réponse (même partielle) enregistrée, sinon on retire la question
-        if (got.trim()) history.push({ role: 'assistant', content: got.trim() });
-        else history.pop();
+      // chaque réponse reste collée à SA question ; question abandonnée ou sans réponse : retirée
+      const k = history.indexOf(u);
+      if (conv === myConv && k >= 0) {
+        if (got.trim() && !my.signal.aborted) history.splice(k + 1, 0, { role: 'assistant', content: got.trim() });
+        else history.splice(k, 1);
       }
+      if (pending?.u === u) pending = null;
       if (ctrl === my) {
         ctrl = null; answering = false;
         if (ok) {
@@ -387,11 +425,12 @@
   mic.onclick = () => {
     if (!listening) return start();
     const q = v2 ? heard() : '';
+    if (v2) { if (running) dropNext = true; consumeHeard(); }   // sinon onend la remettrait de côté
     stop();
     if (q && !isEcho(q)) ask(q);
   };
   // Clear = nouveau contexte : on oublie tout l'échange
-  $('clear').onclick = () => { conv++; history = []; clearText(); say(v2 ? 'New context' : ''); };
+  $('clear').onclick = () => { conv++; history = []; pending = null; clearText(); say(v2 ? 'New context' : ''); };
 
   const askBtn = $('ask');
   function setV2(on) {
@@ -403,7 +442,11 @@
   }
   askBtn.onclick = () => {
     setV2(!v2);
-    if (v2 && !listening && heard()) { ask(heard()); return; }   // question déjà là : on répond
+    clearTimeout(autoTimer); clearTimeout(clipTimer);
+    if (listening) {
+      if (v2) consumeHeard();                         // on part d'une page blanche en mains libres
+      else clipTimer = setTimeout(stop, MAX_CLIP_MS);
+    } else if (v2 && heard()) { const q = heard(); consumeHeard(); ask(q); return; }   // question déjà là : on répond
     if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; }
     render();
   };
