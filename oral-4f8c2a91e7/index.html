@@ -132,7 +132,10 @@
     const uHit = h.filter((w) => uni.has(w)).length / h.length;
     const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
     const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
-    if (QSTART.has(h[0]) && h.length <= 8 && bHit < 0.3) return false;   // « can you give an example »
+    const tri = new Set(a.slice(2).map((w, i) => a[i] + ' ' + a[i + 1] + ' ' + w));
+    const tHit = h.slice(2).filter((w, i) => tri.has(h[i] + ' ' + h[i + 1] + ' ' + w)).length / (h.length - 2);
+    // courte question (« can you give an example », « is it better than an MLP ») : écho seulement si > moitié des triplets lus
+    if (QSTART.has(h[0]) && h.length <= 8 && tHit <= 0.5) return false;
     return bHit >= 0.4 || uHit >= 0.8;
   }
   const heard = () => join(join(committed, sessFinal), sessInterim).trim();
@@ -374,11 +377,12 @@
   async function ask(q) {
     if (!q) { say('No question', true); return; }
     // réponse précédente encore en cours = question coupée par une pause : on fusionne
-    if (answering && pending && pending.conv === conv) {
+    const looksNew = QSTART.has(words(q)[0]);   // « where did you… » = vraie nouvelle question
+    if (answering && pending && pending.conv === conv && !looksNew) {
       const k = history.indexOf(pending.u);
       if (k >= 0) { q = join(pending.u.content, q); history.splice(k, 1); }
     } else if (lastAsk && lastAsk.conv === conv && !lastAsk.echoed && Date.now() - lastAsk.t < MERGE_MS
-               && !QSTART.has(words(q)[0])) {
+               && !looksNew) {
       // réponse déjà finie mais pas encore lue, et la phrase ne commence pas comme une question : c'est la suite
       const k = history.indexOf(lastAsk.u);
       if (k >= 0) {
@@ -432,7 +436,7 @@
       // chaque réponse reste collée à SA question ; question abandonnée ou sans réponse : retirée
       const k = history.indexOf(u);
       if (conv === myConv && k >= 0) {
-        if (got.trim() && !my.signal.aborted) history.splice(k + 1, 0, { role: 'assistant', content: got.trim() });
+        if (got.trim()) history.splice(k + 1, 0, { role: 'assistant', content: got.trim() });   // même partielle
         else history.splice(k, 1);
       }
       if (pending?.u === u) pending = null;
