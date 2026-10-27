@@ -173,7 +173,7 @@
     if (v2) {
       text.textContent = '';
       text.dataset.ph = listening ? 'Listening…'
-        : history.length ? 'Tap the mic for the next question.'
+        : history.length ? 'Tap the mic to keep listening.'
         : 'Answer mode: tap the mic, read the context, then ask the questions.';
       fit(true); return;
     }
@@ -374,7 +374,7 @@
         ctrl = null; answering = false;
         if (ok) {
           const isCtx = /^\s*OK\.?\s*$/i.test(got);
-          if (isCtx) answer = '✓ Context saved. Tap the mic for the question.';
+          if (isCtx) answer = '✓ Context saved. Waiting for the question…';
           const n = history.filter((m) => m.role === 'assistant' && !/^OK\.?$/i.test(m.content)).length;
           say(isCtx ? 'Context' : 'Q' + n);
         }
