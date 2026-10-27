@@ -95,7 +95,7 @@
   let dropNext = false, freeRestart = false, restarts = 0;
   let retryDelay = 250, sessionStart = 0;
   let restartTimer = null, stallTimer = null, clipTimer = null;
-  let wakeLock = null, curPx = 999;
+  let wakeLock = null, curPx = 999, errMsg = '';
 
   function join(a, b) {
     b = b.trim();
@@ -121,6 +121,7 @@
   }
 
   function render() {
+    if (errMsg) { text.textContent = errMsg; fit(true); return; }   // erreur affichée en grand
     text.textContent = join(committed, sessFinal);
     if (sessInterim.trim()) {
       const span = document.createElement('span');
@@ -160,10 +161,10 @@
   }
 
   if (!window.isSecureContext) {
-    say("Le micro exige HTTPS.", true);
+    errMsg = "Le micro exige HTTPS.";
     mic.disabled = true;
   } else if (!SR) {
-    say("Ouvre cette page dans Safari.", true);
+    errMsg = "Reconnaissance vocale indisponible ici. Ouvre le lien directement dans Safari (pas Chrome, ni le navigateur intégré d'une app).";
     mic.disabled = true;
   } else {
     rec = new SR();   // une seule instance (en recréer une peut déclencher un son système sur iOS)
@@ -191,12 +192,20 @@
 
     rec.onerror = (e) => {
       if (FATAL.includes(e.error)) {
-        say(e.error === 'audio-capture' ? 'Aucun micro.' : 'Micro refusé : aA › Réglages du site › Micro › Autoriser', true);
         stop();
+        // sur iPhone, la reconnaissance passe par la Dictée iOS : désactivée = service-not-allowed
+        const msg = {
+          'service-not-allowed': "Reconnaissance bloquée par iOS. Active la Dictée : Réglages › Général › Clavier › Activer la dictée. Vérifie aussi Réglages › Temps d'écran › Restrictions › Siri & Dictée.",
+          'not-allowed': "Micro refusé. Dans Safari : aA › Réglages du site web › Micro › Autoriser, puis recharge la page.",
+          'audio-capture': "Aucun micro disponible (un appel ou une autre app l'utilise ?).",
+        }[e.error];
+        errMsg = msg + ' [' + e.error + ']';
+        render();
+        say('Erreur', true);
       } else if (e.error === 'network') {
         say('Réseau…', true);
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        say('Erreur : ' + e.error, true);
+        say('Erreur : ' + e.error + (e.message ? ' — ' + e.message : ''), true);
       }
     };
 
@@ -230,12 +239,20 @@
 
   function start() {
     if (!rec || listening) return;
-    listening = true; restarts = 0;
+    listening = true; restarts = 0; errMsg = '';
+    status.classList.remove('err');
     mic.classList.add('on');
     say('Démarrage…');
     lockScreen();
     clearText();          // un appui = un nouveau vocal
     launch();             // si l'ancienne session finit encore, onend relancera
+    // Safari muet (ni onstart ni erreur) : on le dit au lieu de rester bloqué
+    setTimeout(() => {
+      if (listening && !running && !errMsg) {
+        errMsg = "Safari n'a pas démarré l'écoute. Active la Dictée (Réglages › Général › Clavier), puis recharge la page. [no-start]";
+        stop(); render(); say('Erreur', true);
+      }
+    }, 4000);
     clearTimeout(clipTimer);
     clipTimer = setTimeout(stop, MAX_CLIP_MS);
   }
