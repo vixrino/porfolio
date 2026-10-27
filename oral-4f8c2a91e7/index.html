@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#111112" media="(prefers-color-scheme: dark)">
@@ -17,7 +17,11 @@
     :root { --bg: #111112; --fg: #ededed; --muted: #77777a; --card: #1b1b1d; --border: #2a2a2d; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; overflow: hidden; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
+  }
   body {
     background: var(--bg); color: var(--fg);
     font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -30,10 +34,11 @@
     flex: 1; min-height: 0; overflow: hidden;
     background: var(--card); border: 1px solid var(--border); border-radius: 16px;
     padding: 16px 20px; line-height: 1.2; font-weight: 600;
-    white-space: pre-wrap; overflow-wrap: break-word;
+    white-space: pre-wrap; overflow-wrap: normal;
     display: flex; align-items: center;
   }
   #text { width: 100%; }
+  #text.tiny { overflow-wrap: anywhere; }
   #text:empty::before { content: "Appuie sur le micro et parle en anglais…"; color: var(--muted); font-weight: 500; }
   .interim { color: var(--muted); }
   .side { display: flex; align-items: center; justify-content: center; gap: 16px; }
@@ -64,7 +69,7 @@
 </head>
 <body>
 <main>
-  <div id="transcript" aria-live="polite"><div id="text"></div></div>
+  <div id="transcript"><div id="text"></div></div>
   <div class="side">
     <button id="mic" aria-label="Démarrer / arrêter l'écoute">
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
@@ -79,13 +84,18 @@
   const box = $('transcript'), text = $('text'), status = $('status'), mic = $('mic');
 
   const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
-  const MIN_PX = 18, MAX_PX = 160;
+  const MIN_PX = 18;
+  const MAX_RESTARTS = 3;      // relances auto par vocal (chaque relance = nouvelle session iOS)
+  const STALL_MS = 5000;       // iOS peut se figer sans onend : on relance après 5 s sans résultat
+  const MAX_CLIP_MS = 25000;   // vocaux ≤ 20 s : arrêt de sécurité
 
   let committed = '';   // texte des sessions précédentes (après une coupure iOS)
   let sessFinal = '', sessInterim = '';
-  let listening = false, rec = null;
-  let retryDelay = 250, sessionStart = 0, restartTimer = null;
-  let wakeLock = null;
+  let listening = false, running = false, rec = null;
+  let dropNext = false, freeRestart = false, restarts = 0;
+  let retryDelay = 250, sessionStart = 0;
+  let restartTimer = null, stallTimer = null, clipTimer = null;
+  let wakeLock = null, curPx = 999;
 
   function join(a, b) {
     b = b.trim();
@@ -93,16 +103,21 @@
     return a ? a + ' ' + b : b;
   }
 
-  // plus grande taille de police où toute la phrase tient dans le cadre
-  function fit() {
-    const maxH = box.clientHeight - 32, maxW = box.clientWidth - 40;
-    let lo = MIN_PX, hi = MAX_PX;
+  // plus grande taille où toute la phrase tient ; pendant un vocal on ne fait que rétrécir (pas de saut)
+  function fit(grow = !listening) {
+    const cs = getComputedStyle(box);
+    const maxH = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    const maxW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const cap = Math.max(MIN_PX, Math.floor(maxH / 1.2));
+    text.classList.remove('tiny');
+    let lo = MIN_PX, hi = Math.min(grow ? cap : curPx, cap) + 1;
     while (hi - lo > 1) {
       const mid = (lo + hi) >> 1;
       text.style.fontSize = mid + 'px';
       if (text.scrollHeight <= maxH && text.scrollWidth <= maxW) lo = mid; else hi = mid;
     }
-    text.style.fontSize = lo + 'px';
+    text.style.fontSize = (curPx = lo) + 'px';
+    text.classList.toggle('tiny', text.scrollWidth > maxW);   // mot trop long : on le coupe
   }
 
   function render() {
@@ -115,18 +130,34 @@
     }
     fit();
   }
-  addEventListener('resize', () => requestAnimationFrame(fit));
+  new ResizeObserver(() => fit(true)).observe(box);   // rotation, barre Safari
 
   function say(msg, err = false) { status.textContent = msg; status.classList.toggle('err', err); }
 
   // écran allumé pendant l'écoute
   async function lockScreen() {
-    try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+    if (!('wakeLock' in navigator) || wakeLock) return;
+    try {
+      const l = await navigator.wakeLock.request('screen');
+      if (listening && !wakeLock) wakeLock = l; else l.release();
+    } catch {}
   }
   function unlockScreen() { try { wakeLock?.release(); } catch {} wakeLock = null; }
+  // iOS exige un geste pour reprendre le verrou : on retente au prochain toucher
+  document.addEventListener('touchend', () => { if (listening && !wakeLock) lockScreen(); });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && listening) { wakeLock = null; lockScreen(); }
   });
+
+  // pas de zoom (pincer, double-tap)
+  ['gesturestart', 'gesturechange', 'dblclick'].forEach((t) =>
+    document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
+
+  function launch() {
+    if (!listening || running) return;
+    sessionStart = Date.now();
+    try { rec.start(); } catch {}
+  }
 
   if (!window.isSecureContext) {
     say("Le micro exige HTTPS.", true);
@@ -135,15 +166,16 @@
     say("Ouvre cette page dans Safari.", true);
     mic.disabled = true;
   } else {
-    rec = new SR();
+    rec = new SR();   // une seule instance (en recréer une peut déclencher un son système sur iOS)
     rec.lang = 'en-US';
     rec.continuous = true;
     rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { sessionStart = Date.now(); say('Écoute…'); };
+    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening) say('Écoute…'); };
 
     rec.onresult = (e) => {
+      if (dropNext) return;
       // reconstruit depuis e.results à chaque fois : pas de doublons
       sessFinal = ''; sessInterim = '';
       for (let i = 0; i < e.results.length; i++) {
@@ -153,11 +185,13 @@
       }
       retryDelay = 250;
       render();
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => { if (listening && running) { try { rec.abort(); } catch {} } }, STALL_MS);
     };
 
     rec.onerror = (e) => {
       if (FATAL.includes(e.error)) {
-        say(e.error === 'audio-capture' ? 'Aucun micro.' : 'Micro refusé : Réglages › Safari › Micro.', true);
+        say(e.error === 'audio-capture' ? 'Aucun micro.' : 'Micro refusé : aA › Réglages du site › Micro › Autoriser', true);
         stop();
       } else if (e.error === 'network') {
         say('Réseau…', true);
@@ -166,36 +200,53 @@
       }
     };
 
-    // coupure (silence, iOS…) : on garde tout, même l'interim, puis on relance
+    // coupure (silence, iOS…) : on garde tout, même l'interim, puis on relance si besoin
     rec.onend = () => {
-      committed = join(join(committed, sessFinal), sessInterim);
+      running = false;
+      clearTimeout(stallTimer);
+      if (dropNext) { dropNext = false; sessFinal = ''; sessInterim = ''; }
+      else committed = join(join(committed, sessFinal), sessInterim);
       sessFinal = ''; sessInterim = '';
       render();
       if (!listening) return;
+      if (freeRestart) freeRestart = false;
+      else if (++restarts > MAX_RESTARTS) { stop(); return; }
       retryDelay = Date.now() - sessionStart < 1000 ? Math.min(retryDelay * 2, 4000) : 250;
       clearTimeout(restartTimer);
-      restartTimer = setTimeout(() => { if (listening) { try { rec.start(); } catch {} } }, retryDelay);
+      restartTimer = setTimeout(launch, retryDelay);
     };
   }
 
-  function clearText() { committed = ''; sessFinal = ''; sessInterim = ''; render(); }
+  function clearText() {
+    committed = ''; sessFinal = ''; sessInterim = ''; curPx = 999;
+    // la session en cours renverrait tout son texte : on la jette
+    if (running) {
+      dropNext = true;
+      if (listening) freeRestart = true;
+      try { rec.abort(); } catch {}
+    }
+    render();
+  }
 
   function start() {
     if (!rec || listening) return;
-    clearText();          // un appui = un nouveau vocal
-    listening = true;
+    listening = true; restarts = 0;
     mic.classList.add('on');
     say('Démarrage…');
     lockScreen();
-    try { rec.start(); } catch {}
+    clearText();          // un appui = un nouveau vocal
+    launch();             // si l'ancienne session finit encore, onend relancera
+    clearTimeout(clipTimer);
+    clipTimer = setTimeout(stop, MAX_CLIP_MS);
   }
   function stop() {
     listening = false;
-    clearTimeout(restartTimer);
+    clearTimeout(restartTimer); clearTimeout(stallTimer); clearTimeout(clipTimer);
     mic.classList.remove('on');
     unlockScreen();
     if (!status.classList.contains('err')) say('');
     try { rec?.stop(); } catch {}
+    fit(true);
   }
 
   mic.onclick = () => (listening ? stop() : start());
