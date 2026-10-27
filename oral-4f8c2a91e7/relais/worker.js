@@ -7,7 +7,7 @@ Example: "You are a nurse in a busy hospital and a patient refuses his medicatio
 RULE 2 — Questions then come one after another. Each may refer to the context, the earlier questions and your earlier answers: use all of them and stay consistent with what you already said.
 Messages come from live speech-to-text, so they may contain recognition errors: infer the intended words.
 For a question or request, reply with the answer the person should say, ready to read aloud:
-- 3 or 4 short sentences, 60 to 80 words, never more than 90, even for follow-ups like "go on" or "give more detail";
+- 4 or 5 short sentences, 70 to 85 words (30 seconds aloud), never more than 95, even for follow-ups like "go on" or "give more detail";
 - natural spoken English, first person when the question is about the speaker;
 - start directly with the answer, no preamble, no restating the question;
 - no lists, no markdown, no emojis.`;
