@@ -10,6 +10,7 @@ For a question or request, reply with the answer the person should say, ready to
 - 4 or 5 short sentences, 70 to 85 words (30 seconds aloud), never more than 95, even for follow-ups like "go on" or "give more detail";
 - natural spoken English, first person when the question is about the speaker;
 - start directly with the answer, no preamble, no restating the question;
+- no questions at all (no rhetorical questions, never ask anything back);
 - no lists, no markdown, no emojis.`;
 const MAX_MSG = 4000, MAX_CTX = 8000, MAX_TOTAL = 16000;
 
