@@ -101,6 +101,7 @@
   let committed = '';   // texte des sessions précédentes (après une coupure iOS)
   let sessFinal = '', sessInterim = '';
   let sessWords = 0, skipWords = 0;   // mots de la session en cours / déjà traités (V2)
+  let sessTail = [], skipTail = [];    // derniers mots, pour se recaler si iOS réécrit le début
   let listening = false, running = false, started = false, rec = null;
   let dropNext = false, freeRestart = false, restarts = 0;
   let retryDelay = 250, sessionStart = 0;
@@ -112,7 +113,8 @@
   const AUTO_MS = 1800;
   let v2 = false, autoTimer = null;
   // mémoire de l'échange : contexte, questions, réponses (remise à zéro par Clear)
-  let history = [], conv = 0, pending = null;
+  let history = [], conv = 0, pending = null, lastAsk = null;
+  const MERGE_MS = 8000;   // suite d'une question coupée par une pause : fusion si elle arrive vite
   try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
 
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
@@ -130,14 +132,14 @@
     const uHit = h.filter((w) => uni.has(w)).length / h.length;
     const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
     const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
-    if (QSTART.has(h[0]) && h.length <= 8 && bHit < 0.6) return false;   // « can you give an example »
+    if (QSTART.has(h[0]) && h.length <= 8 && bHit < 0.3) return false;   // « can you give an example »
     return bHit >= 0.4 || uHit >= 0.8;
   }
   const heard = () => join(join(committed, sessFinal), sessInterim).trim();
 
   // oublie ce qui a été entendu sans couper l'écoute (pas de relance = pas de mots perdus)
   function consumeHeard() {
-    skipWords = sessWords;
+    skipWords = sessWords; skipTail = sessTail;
     committed = ''; sessFinal = ''; sessInterim = '';
   }
 
@@ -146,8 +148,24 @@
     const q = heard();
     consumeHeard();
     if (!q) return;
-    if (isEcho(q)) { say('You ✓'); return; }
+    if (isEcho(q)) { if (lastAsk) lastAsk.echoed = true; say('You ✓'); return; }
     ask(q);
+  }
+
+  const norm = (w) => w.toLowerCase().replace(/[^a-z0-9']/g, '');
+  // iOS peut réécrire des mots déjà traités (« MeshGPT » → « Mesh GPT ») : on se recale sur les derniers mots consommés
+  function skipFrom(all) {
+    const n = all.map(norm);
+    for (const t of [skipTail, skipTail.slice(-2)]) {
+      if (!t.length) continue;
+      const exp = skipWords - t.length;
+      for (let d = 0; d <= 6; d++) {
+        for (const j of d ? [exp + d, exp - d] : [exp]) {
+          if (j >= 0 && j + t.length <= n.length && t.every((w, k) => n[j + k] === w)) return j + t.length;
+        }
+      }
+    }
+    return Math.min(skipWords, all.length);
   }
 
   function join(a, b) {
@@ -262,7 +280,8 @@
       }
       const all = join(f, i).split(/\s+/).filter(Boolean);
       sessWords = all.length;
-      if (skipWords) { sessFinal = all.slice(skipWords).join(' '); sessInterim = ''; }   // V2 : déjà traité
+      sessTail = all.slice(-4).map(norm);
+      if (skipWords) { sessFinal = all.slice(skipFrom(all)).join(' '); sessInterim = ''; }   // V2 : déjà traité
       else { sessFinal = f; sessInterim = i; }
       retryDelay = 250;
       render();
@@ -296,7 +315,7 @@
       clearTimeout(stallTimer);
       if (dropNext) dropNext = false;
       else committed = join(join(committed, sessFinal), sessInterim);
-      sessFinal = ''; sessInterim = ''; sessWords = 0; skipWords = 0;
+      sessFinal = ''; sessInterim = ''; sessWords = 0; skipWords = 0; sessTail = []; skipTail = [];
       render();
       if (!listening) { freeRestart = false; return; }
       const quick = Date.now() - sessionStart < 1500;
@@ -358,12 +377,21 @@
     if (answering && pending && pending.conv === conv) {
       const k = history.indexOf(pending.u);
       if (k >= 0) { q = join(pending.u.content, q); history.splice(k, 1); }
+    } else if (lastAsk && lastAsk.conv === conv && !lastAsk.echoed && Date.now() - lastAsk.t < MERGE_MS
+               && !QSTART.has(words(q)[0])) {
+      // réponse déjà finie mais pas encore lue, et la phrase ne commence pas comme une question : c'est la suite
+      const k = history.indexOf(lastAsk.u);
+      if (k >= 0) {
+        q = join(lastAsk.u.content, q);
+        history.splice(k, history[k + 1]?.role === 'assistant' ? 2 : 1);
+      }
     }
     try { ctrl?.abort(); } catch {}
     const my = ctrl = new AbortController(), myConv = conv;
     const u = { role: 'user', content: q };
     history.push(u);
     pending = { u, conv };
+    lastAsk = { u, conv, t: Date.now(), echoed: false };
     let got = '', ok = false;
     errMsg = ''; answer = ''; answering = true; curPx = 999;
     say('Answering…'); render();
@@ -430,7 +458,7 @@
     if (q && !isEcho(q)) ask(q);
   };
   // Clear = nouveau contexte : on oublie tout l'échange
-  $('clear').onclick = () => { conv++; history = []; pending = null; clearText(); say(v2 ? 'New context' : ''); };
+  $('clear').onclick = () => { conv++; history = []; pending = null; lastAsk = null; clearText(); say(v2 ? 'New context' : ''); };
 
   const askBtn = $('ask');
   function setV2(on) {
@@ -447,7 +475,7 @@
       if (v2) consumeHeard();                         // on part d'une page blanche en mains libres
       else clipTimer = setTimeout(stop, MAX_CLIP_MS);
     } else if (v2 && heard()) { const q = heard(); consumeHeard(); ask(q); return; }   // question déjà là : on répond
-    if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; }
+    if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; if (!status.classList.contains('err')) say(listening ? 'Listening…' : ''); }
     render();
   };
   setV2(v2);
