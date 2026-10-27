@@ -11,169 +11,144 @@
 <style>
   :root {
     --bg: #f6f6f4; --fg: #1a1a1a; --muted: #8a8a85; --card: #ffffff;
-    --accent: #e5484d; --border: #e4e4e0; --size: 1.35rem;
+    --accent: #e5484d; --border: #e4e4e0;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #111112; --fg: #ededed; --muted: #77777a; --card: #1b1b1d; --border: #2a2a2d; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
   body {
     background: var(--bg); color: var(--fg);
-    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; overflow-x: hidden;
-    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    height: 100dvh; -webkit-user-select: none; user-select: none;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+             max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
   }
-  main { width: 100%; max-width: 720px; flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-  .bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .bar .group { display: flex; gap: 6px; }
+  main { height: 100%; display: flex; flex-direction: column; gap: 12px; }
   #transcript {
-    flex: 1; min-height: 40vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    flex: 1; min-height: 0; overflow: hidden;
     background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-    padding: 20px; font-size: var(--size); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
+    padding: 16px 20px; line-height: 1.2; font-weight: 600;
+    white-space: pre-wrap; overflow-wrap: break-word;
+    display: flex; align-items: center;
   }
-  #transcript:empty::before { content: "Appuie sur le micro et parle en anglais…"; color: var(--muted); }
+  #text { width: 100%; }
+  #text:empty::before { content: "Appuie sur le micro et parle en anglais…"; color: var(--muted); font-weight: 500; }
   .interim { color: var(--muted); }
-  .controls { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+  .side { display: flex; align-items: center; justify-content: center; gap: 16px; }
   #mic {
-    width: 96px; height: 96px; border-radius: 50%; border: none; cursor: pointer; flex: none;
+    width: 88px; height: 88px; border-radius: 50%; border: none; cursor: pointer; flex: none;
     background: var(--fg); color: var(--bg); display: grid; place-items: center;
     transition: transform .15s, background .2s; touch-action: manipulation;
   }
   #mic:active { transform: scale(.95); }
-  #mic:disabled { opacity: .35; cursor: not-allowed; }
+  #mic:disabled { opacity: .35; }
   #mic.on { background: var(--accent); color: #fff; animation: pulse 1.4s infinite; }
-  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(229,72,77,.5)} 70%{box-shadow:0 0 0 18px rgba(229,72,77,0)} 100%{box-shadow:0 0 0 0 rgba(229,72,77,0)} }
-  button.small, select {
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(229,72,77,.5)} 70%{box-shadow:0 0 0 16px rgba(229,72,77,0)} 100%{box-shadow:0 0 0 0 rgba(229,72,77,0)} }
+  #clear {
     background: transparent; color: var(--fg); border: 1px solid var(--border);
-    border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .9rem; cursor: pointer;
+    border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .85rem;
     min-height: 44px; touch-action: manipulation;
   }
-  select { appearance: none; -webkit-appearance: none; padding-right: 14px; }
-  #status { text-align: center; color: var(--muted); font-size: .9rem; min-height: 1.4em; }
+  #status { color: var(--muted); font-size: .8rem; text-align: center; min-height: 1.2em; }
   #status.err { color: var(--accent); }
-  .hint { text-align: center; color: var(--muted); font-size: .8rem; }
-  @media (hover: none) { .hint { display: none; } }
+
+  /* iPhone à l'horizontale : texte à gauche, commandes en colonne à droite */
+  @media (orientation: landscape) {
+    main { flex-direction: row; }
+    .side { flex-direction: column; width: 104px; flex: none; gap: 12px; }
+    #mic { width: 80px; height: 80px; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <div class="bar">
-    <select id="lang" aria-label="Accent">
-      <option value="en-US">🇺🇸 en-US</option>
-      <option value="en-GB">🇬🇧 en-GB</option>
-    </select>
-    <div class="group">
-      <button class="small" id="smaller" aria-label="Texte plus petit">A−</button>
-      <button class="small" id="bigger" aria-label="Texte plus grand">A+</button>
-    </div>
-  </div>
-  <div id="transcript" aria-live="polite"></div>
-  <div id="status"></div>
-  <div class="controls">
-    <button class="small" id="copy">Copier</button>
-    <button class="small" id="dl">.txt</button>
+  <div id="transcript" aria-live="polite"><div id="text"></div></div>
+  <div class="side">
     <button id="mic" aria-label="Démarrer / arrêter l'écoute">
-      <svg width="38" height="38" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
-    <button class="small" id="clear">Effacer</button>
+    <button id="clear">Effacer</button>
+    <div id="status"></div>
   </div>
-  <div class="hint">Espace = démarrer / arrêter</div>
 </main>
 <script>
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const $ = (id) => document.getElementById(id);
-  const box = $('transcript'), status = $('status'), mic = $('mic'), langSel = $('lang');
+  const box = $('transcript'), text = $('text'), status = $('status'), mic = $('mic');
 
-  const PAUSE_MS = 2000;            // silence au-delà duquel on passe à la ligne
   const FATAL = ['not-allowed', 'service-not-allowed', 'audio-capture'];
+  const MIN_PX = 18, MAX_PX = 160;
 
-  let committed = '';   // texte validé (sessions précédentes + paragraphes clos)
-  let base = 0;         // premier index de e.results pas encore intégré à committed
+  let committed = '';   // texte des sessions précédentes (après une coupure iOS)
   let sessFinal = '', sessInterim = '';
-  let lastLen = 0, lastHeard = 0;
   let listening = false, rec = null;
   let retryDelay = 250, sessionStart = 0, restartTimer = null;
   let wakeLock = null;
 
-  // --- préférences (localStorage peut être bloqué) ---
-  const store = {
-    get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
-  };
-  let size = parseFloat(store.get('lt-size', '1.35'));
-  const applySize = () => document.documentElement.style.setProperty('--size', size + 'rem');
-  applySize();
-  langSel.value = store.get('lt-lang', 'en-US');
-
-  // ajoute un morceau de texte avec le bon espacement
   function join(a, b) {
     b = b.trim();
     if (!b) return a;
-    if (!a || a.endsWith('\n')) return a + b;
-    return a + ' ' + b;
+    return a ? a + ' ' + b : b;
   }
 
-  function fullText() { return join(join(committed, sessFinal), sessInterim).trim(); }
+  // plus grande taille de police où toute la phrase tient dans le cadre
+  function fit() {
+    const maxH = box.clientHeight - 32, maxW = box.clientWidth - 40;
+    let lo = MIN_PX, hi = MAX_PX;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      text.style.fontSize = mid + 'px';
+      if (text.scrollHeight <= maxH && text.scrollWidth <= maxW) lo = mid; else hi = mid;
+    }
+    text.style.fontSize = lo + 'px';
+  }
 
   function render() {
-    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.textContent = join(committed, sessFinal);
+    text.textContent = join(committed, sessFinal);
     if (sessInterim.trim()) {
       const span = document.createElement('span');
       span.className = 'interim';
-      span.textContent = (box.textContent && !box.textContent.endsWith('\n') ? ' ' : '') + sessInterim.trim();
-      box.appendChild(span);
+      span.textContent = (text.textContent ? ' ' : '') + sessInterim.trim();
+      text.appendChild(span);
     }
-    if (atBottom) box.scrollTop = box.scrollHeight;
+    fit();
   }
+  addEventListener('resize', () => requestAnimationFrame(fit));
 
   function say(msg, err = false) { status.textContent = msg; status.classList.toggle('err', err); }
 
-  // --- garder l'écran allumé pendant l'écoute ---
+  // écran allumé pendant l'écoute
   async function lockScreen() {
     try { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch {}
-    if (wakeLock) wakeLock.addEventListener?.('release', () => { wakeLock = null; });
   }
   function unlockScreen() { try { wakeLock?.release(); } catch {} wakeLock = null; }
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && listening) lockScreen();
+    if (document.visibilityState === 'visible' && listening) { wakeLock = null; lockScreen(); }
   });
 
   if (!window.isSecureContext) {
-    say("Le micro exige HTTPS (ou localhost). Ouvre la page via https://", true);
+    say("Le micro exige HTTPS.", true);
     mic.disabled = true;
   } else if (!SR) {
-    say("Navigateur non supporté. Utilise Safari sur iPhone, Chrome sur ordinateur.", true);
+    say("Ouvre cette page dans Safari.", true);
     mic.disabled = true;
   } else {
     rec = new SR();
+    rec.lang = 'en-US';
     rec.continuous = true;
     rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { sessionStart = Date.now(); say('Écoute en cours…'); };
+    rec.onstart = () => { sessionStart = Date.now(); say('Écoute…'); };
 
     rec.onresult = (e) => {
-      const res = e.results;
-      lastLen = res.length;
-      const now = Date.now();
-
-      // longue pause : on fige les résultats finaux et on passe à la ligne
-      if (lastHeard && now - lastHeard > PAUSE_MS) {
-        let i = base;
-        for (; i < res.length && res[i].isFinal; i++) committed = join(committed, res[i][0].transcript);
-        if (i > base && committed && !committed.endsWith('\n')) committed += '\n';
-        base = i;
-      }
-      lastHeard = now;
-
-      // on reconstruit depuis e.results à chaque fois : pas de doublons (Android)
+      // reconstruit depuis e.results à chaque fois : pas de doublons
       sessFinal = ''; sessInterim = '';
-      for (let i = base; i < res.length; i++) {
-        const t = res[i][0].transcript;
-        if (res[i].isFinal) sessFinal = join(sessFinal, t);
+      for (let i = 0; i < e.results.length; i++) {
+        const t = e.results[i][0].transcript;
+        if (e.results[i].isFinal) sessFinal = join(sessFinal, t);
         else sessInterim = join(sessInterim, t);
       }
       retryDelay = 250;
@@ -182,41 +157,37 @@
 
     rec.onerror = (e) => {
       if (FATAL.includes(e.error)) {
-        say(e.error === 'audio-capture' ? 'Aucun micro détecté.' : 'Accès au micro refusé. Autorise-le dans les réglages du navigateur.', true);
+        say(e.error === 'audio-capture' ? 'Aucun micro.' : 'Micro refusé : Réglages › Safari › Micro.', true);
         stop();
       } else if (e.error === 'network') {
-        say('Réseau indisponible, nouvelle tentative…', true);
+        say('Réseau…', true);
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
         say('Erreur : ' + e.error, true);
       }
     };
 
-    // fin de session (silence, coupure iOS…) : on garde tout, même l'interim, puis on relance
+    // coupure (silence, iOS…) : on garde tout, même l'interim, puis on relance
     rec.onend = () => {
       committed = join(join(committed, sessFinal), sessInterim);
-      sessFinal = ''; sessInterim = ''; base = 0; lastLen = 0;
+      sessFinal = ''; sessInterim = '';
       render();
       if (!listening) return;
-      // sessions qui meurent tout de suite : on espace les relances
       retryDelay = Date.now() - sessionStart < 1000 ? Math.min(retryDelay * 2, 4000) : 250;
       clearTimeout(restartTimer);
-      restartTimer = setTimeout(() => { if (listening) launch(); }, retryDelay);
+      restartTimer = setTimeout(() => { if (listening) { try { rec.start(); } catch {} } }, retryDelay);
     };
   }
 
-  function launch() {
-    rec.lang = langSel.value;
-    try { rec.start(); } catch {}
-  }
+  function clearText() { committed = ''; sessFinal = ''; sessInterim = ''; render(); }
 
   function start() {
     if (!rec || listening) return;
+    clearText();          // un appui = un nouveau vocal
     listening = true;
-    lastHeard = 0;
     mic.classList.add('on');
     say('Démarrage…');
     lockScreen();
-    launch();
+    try { rec.start(); } catch {}
   }
   function stop() {
     listening = false;
@@ -228,43 +199,8 @@
   }
 
   mic.onclick = () => (listening ? stop() : start());
-
-  langSel.onchange = () => {
-    store.set('lt-lang', langSel.value);
-    if (listening) { try { rec.stop(); } catch {} }   // relance auto avec la nouvelle langue
-  };
-
-  $('smaller').onclick = () => { size = Math.max(0.9, +(size - 0.15).toFixed(2)); store.set('lt-size', size); applySize(); };
-  $('bigger').onclick  = () => { size = Math.min(3.5, +(size + 0.15).toFixed(2)); store.set('lt-size', size); applySize(); };
-
-  $('clear').onclick = () => {
-    committed = ''; sessFinal = ''; sessInterim = '';
-    base = lastLen;   // ignore ce qui a déjà été reconnu dans la session en cours
-    render();
-  };
-
-  $('copy').onclick = async () => {
-    try { await navigator.clipboard.writeText(fullText()); say('Copié ✓'); }
-    catch { say('Copie impossible', true); }
-  };
-
-  $('dl').onclick = () => {
-    const blob = new Blob([fullText() + '\n'], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'transcript-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.txt';
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
-
-  // espace = démarrer / arrêter (ordinateur)
-  document.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space' || e.repeat || e.target.tagName === 'SELECT') return;
-    e.preventDefault();
-    mic.click();
-  });
-  // évite que l'espace "reclique" le bouton qui a le focus
-  document.addEventListener('keyup', (e) => { if (e.code === 'Space') e.preventDefault(); });
+  $('clear').onclick = clearText;
+  render();
 </script>
 </body>
 </html>
