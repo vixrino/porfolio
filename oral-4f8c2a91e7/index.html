@@ -232,11 +232,13 @@
   let queue = Promise.resolve();   // les phrases sont traitées dans l'ordre
 
   async function startCapture() {
+    // iOS n'autorise l'audio que pendant le toucher : on le crée AVANT d'attendre la permission du micro
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    const resumed = ac.resume().catch(() => {});
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    ac = new (window.AudioContext || window.webkitAudioContext)();
-    await ac.resume();
+    await resumed;
     src = ac.createMediaStreamSource(stream);
     proc = ac.createScriptProcessor(4096, 1, 1);
     proc.onaudioprocess = (e) => onAudio(e.inputBuffer.getChannelData(0));
@@ -370,7 +372,7 @@
       await startCapture();
       if (listening) say('Listening…'); else stopCapture(false);
     } catch (e) {
-      listening = false; mic.classList.remove('on'); unlockScreen();
+      listening = false; mic.classList.remove('on'); unlockScreen(); stopCapture(false);
       errMsg = e.name === 'NotAllowedError'
         ? 'Microphone denied. In Safari: aA › Website Settings › Microphone › Allow, then reload the page.'
         : 'Microphone unavailable (' + (e.message || e.name) + ').';
