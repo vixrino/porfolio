@@ -120,6 +120,13 @@
   // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
   const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
   const QSTART = new Set([...QWORDS, 'can', 'could', 'would', 'will', 'do', 'does', 'did', 'is', 'are', 'have', 'tell', 'give', 'describe']);
+  // vraie tournure de question : « where did… », « what about… », « is it… », « can you… »
+  const AUX = new Set(['do', 'does', 'did', 'is', 'are', 'was', 'were', 'can', 'could', 'would', 'will', 'should', 'have', 'has',
+                       'about', 'not', 'come', 'much', 'many', 'long', 'often', 'far', 'old', 'kind', 'type', 'else', 'exactly']);
+  const PRON = new Set(['you', 'it', 'they', 'we', 'i', 'there', 'he', 'she', 'that', 'this', 'your', 'these', 'those', 'anyone', 'one']);
+  const WH = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose']);
+  const asksLikeQuestion = (h) => (WH.has(h[0]) && AUX.has(h[1])) || (QSTART.has(h[0]) && !WH.has(h[0]) && PRON.has(h[1]))
+    || ['tell', 'give', 'describe', 'explain'].includes(h[0]);
   const words = (s) => s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
   function isEcho(q) {
     const refs = history.filter((m) => m.role === 'assistant' && !/^OK\.?$/i.test(m.content)).slice(-2).map((m) => m.content);
@@ -134,8 +141,8 @@
     const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
     const tri = new Set(a.slice(2).map((w, i) => a[i] + ' ' + a[i + 1] + ' ' + w));
     const tHit = h.slice(2).filter((w, i) => tri.has(h[i] + ' ' + h[i + 1] + ' ' + w)).length / (h.length - 2);
-    // courte question (« can you give an example », « is it better than an MLP ») : écho seulement si > moitié des triplets lus
-    if (QSTART.has(h[0]) && h.length <= 8 && tHit <= 0.5) return false;
+    // courte question bien tournée (« can you give an example », « is it better than an MLP ») : jamais un écho, sauf lecture mot pour mot
+    if (h.length <= 12 && asksLikeQuestion(h) && tHit <= 0.8) return false;
     return bHit >= 0.4 || uHit >= 0.8;
   }
   const heard = () => join(join(committed, sessFinal), sessInterim).trim();
@@ -385,7 +392,7 @@
                && !looksNew) {
       // réponse déjà finie mais pas encore lue, et la phrase ne commence pas comme une question : c'est la suite
       const k = history.indexOf(lastAsk.u);
-      if (k >= 0) {
+      if (k >= 0 && !/^OK\.?$/i.test(history[k + 1]?.content ?? '')) {   // jamais dans un contexte : la question doit être répondue
         q = join(lastAsk.u.content, q);
         history.splice(k, history[k + 1]?.role === 'assistant' ? 2 : 1);
       }
