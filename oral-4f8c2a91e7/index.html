@@ -114,6 +114,34 @@
   let history = [], conv = 0;
   try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
 
+  // V2 mains libres : le micro reste ouvert, on ignore ce qui ressemble à la réponse affichée (moi qui la lis)
+  const QWORDS = new Set(['why', 'what', 'how', 'who', 'when', 'where', 'which', 'whose', 'explain', 'example', 'really']);
+  const words = (s) => s.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').split(/\s+/).filter(Boolean);
+  function isEcho(q) {
+    const refs = history.filter((m) => m.role === 'assistant' && !/^OK\.?$/i.test(m.content)).slice(-2).map((m) => m.content);
+    if (answering) refs.push(answer);
+    const a = words(refs.join(' '));
+    const h = words(q);
+    if (h.length < 3) return !h.some((w) => QWORDS.has(w));   // « so yeah », « um okay » : bruit
+    if (!a.length) return false;
+    const uni = new Set(a), bi = new Set(a.slice(1).map((w, i) => a[i] + ' ' + w));
+    const uHit = h.filter((w) => uni.has(w)).length / h.length;
+    const hb = h.slice(1).map((w, i) => h[i] + ' ' + w);
+    const bHit = hb.filter((b) => bi.has(b)).length / hb.length;
+    return bHit >= 0.4 || uHit >= 0.8;
+  }
+  const heard = () => join(join(committed, sessFinal), sessInterim).trim();
+
+  // fin d'une prise de parole : on repart à zéro sans couper l'écoute, puis question ou écho ?
+  function endSegment() {
+    const q = heard();
+    committed = ''; sessFinal = ''; sessInterim = '';
+    if (running) { dropNext = true; freeRestart = true; try { rec.abort(); } catch {} }
+    if (!q) return;
+    if (isEcho(q)) { say('You ✓'); return; }
+    ask(q);
+  }
+
   function join(a, b) {
     b = b.trim();
     if (!b) return a;
@@ -201,7 +229,7 @@
     rec.interimResults = true;   // les mots s'affichent dès qu'ils sont entendus
     rec.maxAlternatives = 1;
 
-    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening) say('Listening…'); };
+    rec.onstart = () => { running = true; sessionStart = Date.now(); if (listening && !answering && !answer) say('Listening…'); };
 
     rec.onresult = (e) => {
       if (dropNext) return;
@@ -214,7 +242,7 @@
       }
       retryDelay = 250;
       render();
-      if (v2) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening) ask(); }, AUTO_MS); }
+      if (v2) { clearTimeout(autoTimer); autoTimer = setTimeout(() => { if (listening) endSegment(); }, AUTO_MS); }
       clearTimeout(stallTimer);
       stallTimer = setTimeout(() => { if (listening && running) { try { rec.abort(); } catch {} } }, STALL_MS);
     };
@@ -248,7 +276,7 @@
       render();
       if (!listening) return;
       if (freeRestart) freeRestart = false;
-      else if (++restarts > MAX_RESTARTS) { stop(); return; }
+      else if (!v2 && ++restarts > MAX_RESTARTS) { stop(); return; }
       retryDelay = Date.now() - sessionStart < 1000 ? Math.min(retryDelay * 2, 4000) : 250;
       clearTimeout(restartTimer);
       restartTimer = setTimeout(launch, retryDelay);
@@ -285,7 +313,7 @@
       }
     }, 4000);
     clearTimeout(clipTimer);
-    clipTimer = setTimeout(stop, MAX_CLIP_MS);
+    if (!v2) clipTimer = setTimeout(stop, MAX_CLIP_MS);
   }
   function stop() {
     listening = false;
@@ -298,9 +326,7 @@
   }
 
   // envoie la question entendue à l'IA et affiche la réponse au fil de l'eau
-  async function ask() {
-    const q = join(join(committed, sessFinal), sessInterim).trim();
-    if (listening) stop();
+  async function ask(q) {
     if (!q) { say('No question', true); return; }
     try { ctrl?.abort(); } catch {}
     const my = ctrl = new AbortController(), myConv = conv;
@@ -357,8 +383,13 @@
     }
   }
 
-  // en V2, arrêter le micro = répondre tout de suite
-  mic.onclick = () => (listening ? (v2 ? ask() : stop()) : start());
+  // en V2, couper le micro traite d'abord ce qui vient d'être entendu
+  mic.onclick = () => {
+    if (!listening) return start();
+    const q = v2 ? heard() : '';
+    stop();
+    if (q && !isEcho(q)) ask(q);
+  };
   // Clear = nouveau contexte : on oublie tout l'échange
   $('clear').onclick = () => { conv++; history = []; clearText(); say(v2 ? 'New context' : ''); };
 
@@ -372,7 +403,7 @@
   }
   askBtn.onclick = () => {
     setV2(!v2);
-    if (v2 && !listening && join(committed, join(sessFinal, sessInterim)).trim()) { ask(); return; }   // question déjà là : on répond
+    if (v2 && !listening && heard()) { ask(heard()); return; }   // question déjà là : on répond
     if (!v2) { try { ctrl?.abort(); } catch {} ctrl = null; answer = ''; answering = false; }
     render();
   };
