@@ -110,6 +110,8 @@
   // V2 : on n'affiche jamais la question, seulement la réponse (déclenchée après un silence)
   const AUTO_MS = 1800;
   let v2 = false, autoTimer = null;
+  // mémoire de l'échange : contexte, questions, réponses (remise à zéro par Clear)
+  let history = [], conv = 0;
   try { v2 = localStorage.getItem('oral-v2') === '1'; } catch {}
 
   function join(a, b) {
@@ -142,7 +144,9 @@
     if (showAnswer) { text.textContent = answer.trim() || '…'; fit(); return; }
     if (v2) {
       text.textContent = '';
-      text.dataset.ph = listening ? 'Listening…' : 'Answer mode: tap the mic and ask your question.';
+      text.dataset.ph = listening ? 'Listening…'
+        : history.length ? 'Tap the mic for the next question.'
+        : 'Answer mode: tap the mic, read the context, then ask the questions.';
       fit(true); return;
     }
     text.dataset.ph = 'Tap the mic and speak…';
@@ -299,13 +303,15 @@
     if (listening) stop();
     if (!q) { say('No question', true); return; }
     try { ctrl?.abort(); } catch {}
-    const my = ctrl = new AbortController();
+    const my = ctrl = new AbortController(), myConv = conv;
+    history.push({ role: 'user', content: q });
+    let got = '', ok = false;
     errMsg = ''; answer = ''; answering = true; curPx = 999;
     say('Answering…'); render();
     try {
       const r = await fetch(RELAIS, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ question: q }), signal: my.signal,
+        body: JSON.stringify({ messages: history }), signal: my.signal,
       });
       if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || 'HTTP ' + r.status); }
       const reader = r.body.getReader(), dec = new TextDecoder();
@@ -320,23 +326,41 @@
           if (!l.startsWith('data: ')) continue;
           const d = l.slice(6).trim();
           if (d === '[DONE]') continue;
-          try { answer += JSON.parse(d).response || ''; } catch {}
+          try { got += JSON.parse(d).response || ''; } catch {}
+        }
+        // « OK » = simple contexte : on ne l'affiche pas pendant le streaming
+        answer = /^\s*O?K?\.?\s*$/i.test(got) ? '' : got;
+        render();
+      }
+      ok = true;
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        if (!got) answer = '⚠ ' + (e.message || 'Network unavailable');
+        say('Error', true);
+      }
+    } finally {
+      if (conv === myConv) {
+        // garde l'échange cohérent : réponse (même partielle) enregistrée, sinon on retire la question
+        if (got.trim()) history.push({ role: 'assistant', content: got.trim() });
+        else history.pop();
+      }
+      if (ctrl === my) {
+        ctrl = null; answering = false;
+        if (ok) {
+          const isCtx = /^\s*OK\.?\s*$/i.test(got);
+          if (isCtx) answer = '✓ Context saved. Tap the mic for the question.';
+          const n = history.filter((m) => m.role === 'assistant' && !/^OK\.?$/i.test(m.content)).length;
+          say(isCtx ? 'Context' : 'Q' + n);
         }
         render();
       }
-      say('');
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-      if (!answer) answer = '⚠ ' + (e.message || 'Network unavailable');
-      say('Error', true);
-    } finally {
-      if (ctrl === my) { ctrl = null; answering = false; render(); }
     }
   }
 
   // en V2, arrêter le micro = répondre tout de suite
   mic.onclick = () => (listening ? (v2 ? ask() : stop()) : start());
-  $('clear').onclick = clearText;
+  // Clear = nouveau contexte : on oublie tout l'échange
+  $('clear').onclick = () => { conv++; history = []; clearText(); say(v2 ? 'New context' : ''); };
 
   const askBtn = $('ask');
   function setV2(on) {
