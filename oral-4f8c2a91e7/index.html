@@ -11,10 +11,10 @@
 <style>
   :root {
     --bg: #f6f6f4; --fg: #1a1a1a; --muted: #8a8a85; --card: #ffffff;
-    --accent: #e5484d; --border: #e4e4e0;
+    --accent: #e5484d; --border: #e4e4e0; --answer: #2f5bd3; --answer-txt: #1f3f9e;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #111112; --fg: #ededed; --muted: #77777a; --card: #1b1b1d; --border: #2a2a2d; }
+    :root { --bg: #111112; --fg: #ededed; --muted: #77777a; --card: #1b1b1d; --border: #2a2a2d; --answer: #3d63d8; --answer-txt: #a9c0ff; }
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body {
@@ -56,6 +56,13 @@
     border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .85rem;
     min-height: 44px; touch-action: manipulation;
   }
+  #ask {
+    background: var(--answer); color: #fff; border: none;
+    border-radius: 999px; padding: 10px 14px; font: inherit; font-size: .9rem; font-weight: 600;
+    min-height: 48px; touch-action: manipulation;
+  }
+  #ask:active { transform: scale(.96); }
+  #text.answer { color: var(--answer-txt); }
   #status { color: var(--muted); font-size: .8rem; text-align: center; min-height: 1.2em; }
   #status.err { color: var(--accent); }
 
@@ -75,6 +82,7 @@
       <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
     </button>
     <button id="clear">Effacer</button>
+    <button id="ask">Réponse</button>
     <div id="status"></div>
   </div>
 </main>
@@ -96,6 +104,8 @@
   let retryDelay = 250, sessionStart = 0;
   let restartTimer = null, stallTimer = null, clipTimer = null;
   let wakeLock = null, curPx = 999, errMsg = '';
+  const RELAIS = 'https://oral-reponse.dictees-d9709349.workers.dev';
+  let answer = '', answering = false, ctrl = null;   // réponse IA affichée à la place de la question
 
   function join(a, b) {
     b = b.trim();
@@ -104,7 +114,7 @@
   }
 
   // plus grande taille où toute la phrase tient ; pendant un vocal on ne fait que rétrécir (pas de saut)
-  function fit(grow = !listening) {
+  function fit(grow = !listening && !answering) {
     const cs = getComputedStyle(box);
     const maxH = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     const maxW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
@@ -122,6 +132,9 @@
 
   function render() {
     if (errMsg) { text.textContent = errMsg; fit(true); return; }   // erreur affichée en grand
+    const showAnswer = answering || answer;
+    text.classList.toggle('answer', !!showAnswer);
+    if (showAnswer) { text.textContent = answer.trim() || '…'; fit(); return; }
     text.textContent = join(committed, sessFinal);
     if (sessInterim.trim()) {
       const span = document.createElement('span');
@@ -228,6 +241,8 @@
 
   function clearText() {
     committed = ''; sessFinal = ''; sessInterim = ''; curPx = 999;
+    try { ctrl?.abort(); } catch {}
+    ctrl = null; answer = ''; answering = false;
     // la session en cours renverrait tout son texte : on la jette
     if (running) {
       dropNext = true;
@@ -266,8 +281,50 @@
     fit(true);
   }
 
+  // envoie la question entendue à l'IA et affiche la réponse au fil de l'eau
+  async function ask() {
+    const q = join(join(committed, sessFinal), sessInterim).trim();
+    if (listening) stop();
+    if (!q) { say('Aucune question', true); return; }
+    try { ctrl?.abort(); } catch {}
+    const my = ctrl = new AbortController();
+    errMsg = ''; answer = ''; answering = true; curPx = 999;
+    say('Réponse…'); render();
+    try {
+      const r = await fetch(RELAIS, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question: q }), signal: my.signal,
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.erreur || 'HTTP ' + r.status); }
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const l of lines) {
+          if (!l.startsWith('data: ')) continue;
+          const d = l.slice(6).trim();
+          if (d === '[DONE]') continue;
+          try { answer += JSON.parse(d).response || ''; } catch {}
+        }
+        render();
+      }
+      say('');
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      if (!answer) answer = '⚠ ' + (e.message || 'Réseau indisponible');
+      say('Erreur', true);
+    } finally {
+      if (ctrl === my) { ctrl = null; answering = false; render(); }
+    }
+  }
+
   mic.onclick = () => (listening ? stop() : start());
   $('clear').onclick = clearText;
+  $('ask').onclick = ask;
   render();
 </script>
 </body>
