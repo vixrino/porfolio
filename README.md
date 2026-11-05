@@ -57,7 +57,7 @@ Tab completes, ↑/↓ walks history, Ctrl-L clears, Ctrl-U wipes the line.
 
 ## Deploy (GitHub Pages)
 
-Run `node build.js`, push, then Settings → Pages → source `main` / root.
+Run `node build.js` (it also stamps `?v=<hash>` on CSS/JS so browsers reload them), push, then Settings → Pages → source `main` / root.
 
 ## The scene
 
