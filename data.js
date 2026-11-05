@@ -25,13 +25,14 @@
     ['spoken', 'french (native) · english C1 (TOEFL 5/6)'],
   ];
 
+  const RESUME_URL = 'https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view';
+
   const LINKS = [
     ['github',   'vixrino',               'https://github.com/vixrino'],
     ['linkedin', 'lucas-teyssier1',       'https://www.linkedin.com/in/lucas-teyssier1/'],
     ['x.com',    '@0xD7b5',               'https://x.com/0xD7b5'],
     ['email',    'lteyssier00@gmail.com', 'mailto:lteyssier00@gmail.com'],
-    // lien CV masqué pour l'instant, à remettre plus tard :
-    // ['resume',   'pdf ↓',                 'https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view'],
+    ['resume',   'pdf ↓',                 RESUME_URL],
   ];
 
   const T = {
@@ -43,7 +44,9 @@
     ],
     help: [
       ['about', 'who I am'], ['projects', 'what I build'], ['skills', 'tech stack'],
-      ['contact', 'links & mail'], ['resume', 'education & experience'],
+      ['contact', 'links & mail'],
+      ['experience', 'jobs, publications & achievements'], ['education', 'schools & degrees'],
+      ['resume', 'my CV (pdf)'],
       ['coffee', 'the mascot takes a sip'],
       ['wave', 'he waves at you'], ['sleep', 'he takes a nap'],
       ['clear', 'wipe the terminal'],
@@ -120,23 +123,29 @@
   const aboutHTML = () => T.about.map(P).join('');
   const helpHTML  = () => T.help.map(([c, d]) => row(`<span data-run="${c}">${c}</span>`, d)).join('');
 
-  const resumeHTML = () => {
+  const entry = e => `<div class="entry">` +
+    `<div class="eh"><span class="eo">${e.org}</span><span class="ew">${e.when} · ${e.where}</span></div>` +
+    `<div class="er">${e.role}</div>` +
+    (e.note ? `<div class="en">${e.note}</div>` : '') +
+    (e.bullets ? `<ul class="eb">${e.bullets.map(b => `<li>${b}</li>`).join('')}</ul>` : '') +
+    `</div>`;
+  const sec = (title, list) => `<div class="sec">${title}</div>${list.map(entry).join('')}`;
+
+  const experienceHTML = () => {
     const R = T.resume;
-    const entry = e => `<div class="entry">` +
-      `<div class="eh"><span class="eo">${e.org}</span><span class="ew">${e.when} · ${e.where}</span></div>` +
-      `<div class="er">${e.role}</div>` +
-      (e.note ? `<div class="en">${e.note}</div>` : '') +
-      (e.bullets ? `<ul class="eb">${e.bullets.map(b => `<li>${b}</li>`).join('')}</ul>` : '') +
-      `</div>`;
-    return `<div class="sec">${R.xp}</div>${R.jobs.map(entry).join('')}` +
-           `<div class="sec">${R.pub}</div>${R.pubs.map(entry).join('')}` +
-           `<div class="sec">${R.edu}</div>${R.schools.map(entry).join('')}` +
-           `<div class="sec">${R.lead}</div>${R.leads.map(entry).join('')}` +
+    return sec(R.xp, R.jobs) + sec(R.pub, R.pubs) + sec(R.lead, R.leads);
+  };
+  const educationHTML = () => {
+    const R = T.resume;
+    return sec(R.edu, R.schools) +
            `<div class="sec">${R.extra}</div>${R.more.map(m => `<p>${m}</p>`).join('')}`;
   };
+  const resumeHTML = () =>
+    P(`<a href="${RESUME_URL}" target="_blank" rel="noopener">Lucas_Teyssier_CV.pdf ↓</a>`);
 
   const SITE = { PROJECTS, STACK, LINKS, T, row, P,
-                 projectsHTML, stackHTML, linksHTML, aboutHTML, helpHTML, resumeHTML };
+                 projectsHTML, stackHTML, linksHTML, aboutHTML, helpHTML,
+                 experienceHTML, educationHTML, resumeHTML };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = SITE;
   else root.SITE = SITE;

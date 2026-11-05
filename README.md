@@ -51,7 +51,7 @@ sprite at 16×16, `shape-rendering='crispEdges'`. No file to serve, same palette
 
 ## Terminal commands
 
-`help about projects skills contact resume ls cat <file> whoami echo date sudo clear`
+`help about projects experience education skills contact resume ls cat <file> whoami echo date sudo clear`
 plus mascot actions `coffee` `wave` `sleep`.
 Tab completes, ↑/↓ walks history, Ctrl-L clears, Ctrl-U wipes the line.
 
