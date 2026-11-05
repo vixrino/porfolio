@@ -25,7 +25,7 @@
     ['spoken', 'french (native) · english C1 (TOEFL 5/6)'],
   ];
 
-  const RESUME_URL = 'https://drive.google.com/file/d/1dLGs8BBRj7FMytEljTqYT_BTELYIJx03/view';
+  const RESUME_URL = 'Lucas_Teyssier_CV_no_phone.pdf';
 
   const LINKS = [
     ['github',   'vixrino',               'https://github.com/vixrino'],
