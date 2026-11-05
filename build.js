@@ -26,5 +26,12 @@ for (const [id, content] of Object.entries(blocks)) {
   n++;
 }
 
+// cache-busting : ?v=<empreinte du fichier> pour que le navigateur recharge CSS/JS à chaque mise à jour
+const crypto = require('crypto');
+for (const f of ['styles.css', 'data.js', 'scene.js', 'script.js']) {
+  const v = crypto.createHash('sha1').update(fs.readFileSync(path.join(__dirname, f))).digest('hex').slice(0, 8);
+  html = html.replace(new RegExp(`(["'])${f.replace('.', '\\.')}(\\?v=[0-9a-f]+)?\\1`), `$1${f}?v=${v}$1`);
+}
+
 fs.writeFileSync(file, html);
 console.log(`✓ index.html : ${n} blocs régénérés depuis data.js`);
