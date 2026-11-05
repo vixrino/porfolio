@@ -21,7 +21,7 @@
     ['ml',     'pytorch · tensorflow · opencv · yolo · transformers'],
     ['code',   'python · c · java · sql · solidity · javascript'],
     ['infra',  'docker · kubernetes · linux · git'],
-    ['spoken', 'french (native) · english C1 (TOEFL 6/6)'],
+    ['spoken', 'french (native) · english C1 (TOEFL 5/6)'],
   ];
 
   const LINKS = [
@@ -71,7 +71,7 @@
           note: 'graduated with honours (top 10%) · tutored 1st-year CS & maths students in programming' },
       ],
       more: [
-        'Languages: French (native), English C1 (TOEFL 6/6).',
+        'Languages: French (native), English C1 (TOEFL 5/6).',
         'Interests: competitive programming, blockchain, football.',
       ],
     },
