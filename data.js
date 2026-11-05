@@ -85,7 +85,7 @@
           note: 'ranked 1/236 · linear algebra, algorithms, C, probability & statistics · tutored 1st-year CS & maths students in programming' },
       ],
       pubs: [
-        { org: 'MeshAnyOrder', role: 'M. Balice, D. Lacavalla, <b>L. Teyssier</b>, A. Sevincel, Tonio', when: 'submitted to CVPR 2027', where: 'preprint',
+        { org: 'CVPR 2027 (submitted)', role: 'MeshAnyOrder', when: '2026', where: 'M. Balice, D. Lacavalla, <b>L. Teyssier</b>, A. Sevincel, Tonio',
           note: 'Autoregressive mesh generation: a Transformer decoder conditioned on a point cloud encoder predicts each triangle face as 9 quantized coordinates relative to the first vertex of the query face.' },
       ],
       leads: [
@@ -130,9 +130,20 @@
     `</div>`;
   const sec = (title, list) => `<div class="sec">${title}</div>${list.map(entry).join('')}`;
 
+  /* experience = frise : la date à gauche, le poste à droite, un point par entrée */
+  const tl = e => `<div class="tl-i">` +
+    `<div class="tl-d">${e.when}</div>` +
+    `<div class="tl-c"><div class="tl-h"><b>${e.role}</b> <span class="tl-at">@</span> <span class="tl-o">${e.org}</span></div>` +
+    `<div class="tl-w">${e.where}</div>` +
+    (e.note ? `<div class="tl-n">${e.note}</div>` : '') +
+    (e.bullets ? `<ul class="eb">${e.bullets.map(b => `<li>${b}</li>`).join('')}</ul>` : '') +
+    `</div></div>`;
+  const tsec = (title, list) => `<div class="sec">${title}</div><div class="tl">${list.map(tl).join('')}</div>`;
+
   const experienceHTML = () => {
     const R = T.resume;
-    return sec(R.xp, R.jobs) + sec(R.pub, R.pubs) + sec(R.lead, R.leads);
+    const [quant, bdf, mit, free] = R.jobs;
+    return tsec(R.xp, [bdf, mit, quant, free]) + tsec(R.pub, R.pubs) + tsec(R.lead, R.leads);
   };
   const educationHTML = () => {
     const R = T.resume;
