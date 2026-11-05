@@ -97,7 +97,6 @@
           note: '32 trail races, incl. a 132 km / 5,200 m D+ ultra (Grands Trails d’Auvergne 100M, 15th, 17h12) · top 10s: Trail en terres d’Oc (6th 2023, 8th 2025).' },
       ],
       more: [
-        'Languages: French (native), English C1 (TOEFL 5/6).',
         'Interests: financial markets & trading, competitive programming (Master on Codeforces), chess (top 0.1% on chess.com), cinema, blockchain, football.',
       ],
     },
