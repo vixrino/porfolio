@@ -3,7 +3,8 @@
   'use strict';
 
   const { PROJECTS, T, P,
-          projectsHTML, stackHTML, linksHTML, aboutHTML, helpHTML, resumeHTML } = window.SITE;
+          projectsHTML, stackHTML, linksHTML, aboutHTML, helpHTML,
+          experienceHTML, educationHTML, resumeHTML } = window.SITE;
 
   const $ = s => document.querySelector(s);
   const out = $('#out'), live = $('#live'), input = $('#cin');
@@ -26,11 +27,13 @@
     projects: () => `<div class="grid">${projectsHTML()}</div>`,
     skills:   () => stackHTML(),
     contact:  () => `<div class="links">${linksHTML()}</div>`,
+    experience: () => experienceHTML(),
+    education:  () => educationHTML(),
     resume:   () => resumeHTML(),
     coffee: () => { window.mascot?.act('sip');   return P(`<span class="ok">${T.sip}</span> ☕`); },
     wave:   () => { window.mascot?.act('wave');  return P(`<span class="ok">👋</span> ${T.hi}`); },
     sleep:  () => { window.mascot?.act('sleep'); return P(`<span class="ok">zzz…</span> ${T.nap}`); },
-    ls:     () => PROJECTS.map(p => p.n).join('  ') + '  about.md  stack.txt  links.md',
+    ls:     () => PROJECTS.map(p => p.n).join('  ') + '  about.md  experience.md  education.md  stack.txt  links.md',
     whoami: () => 'lucas',
     date:   () => new Date().toString(),
     sudo:   () => `<span class="err">lucas is not in the sudoers file. This incident has been reported.</span>`,
@@ -50,7 +53,7 @@
 
     if (key === 'cat') {
       const f = (args[0] || '').replace(/\.(md|txt)$/, '');
-      const map = { about: 'about', stack: 'skills', skills: 'skills', links: 'contact' };
+      const map = { about: 'about', experience: 'experience', education: 'education', stack: 'skills', skills: 'skills', links: 'contact' };
       return emit(cmd, map[f] ? CMDS[map[f]]()
         : `<span class="err">cat: ${esc(args[0] || '')}: No such file or directory</span>`);
     }
@@ -99,6 +102,8 @@
   const fill = (sel, html) => { const el = $(sel); if (el && !el.children.length) el.innerHTML = html; };
   fill('#about', aboutHTML());
   fill('#proj-grid', projectsHTML());
+  fill('#experience', experienceHTML());
+  fill('#education', educationHTML());
   fill('#stack', stackHTML());
   fill('#links', linksHTML());
 

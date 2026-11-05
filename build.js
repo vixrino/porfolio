@@ -11,6 +11,8 @@ let html = fs.readFileSync(file, 'utf8');
 const blocks = {
   about:       SITE.aboutHTML(),
   'proj-grid': SITE.projectsHTML(),
+  experience:  SITE.experienceHTML(),
+  education:   SITE.educationHTML(),
   stack:       SITE.stackHTML(),
   links:       SITE.linksHTML(),
 };
