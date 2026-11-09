@@ -45,7 +45,7 @@
     help: [
       ['about', 'who I am'], ['projects', 'what I build'], ['skills', 'tech stack'],
       ['contact', 'links & mail'],
-      ['experience', 'jobs, publications & achievements'], ['education', 'schools & degrees'],
+      ['experience', 'jobs & achievements'], ['education', 'schools & degrees'],
       ['resume', 'my CV (pdf)'],
       ['coffee', 'the mascot takes a sip'],
       ['wave', 'he waves at you'], ['sleep', 'he takes a nap'],
@@ -84,10 +84,7 @@
         { org: 'Université de Bordeaux', role: 'Double BSc — Computer Science & Applied Mathematics, 3.3 GPA', when: 'sep 2023 – may 2025', where: 'Bordeaux',
           note: 'ranked 1/236 · linear algebra, algorithms, C, probability & statistics · tutored 1st-year CS & maths students in programming' },
       ],
-      pubs: [
-        { org: 'CVPR 2027 (submitted)', role: 'MeshAnyOrder', when: '2026', where: 'M. Balice, D. Lacavalla, <b>L. Teyssier</b>, A. Sevincel, Tonio',
-          note: 'Autoregressive mesh generation: a Transformer decoder conditioned on a point cloud encoder predicts each triangle face as 9 quantized coordinates relative to the first vertex of the query face.' },
-      ],
+      pubs: [],
       leads: [
         { org: 'Hugging Face × Anthropic Hackathon', role: 'Winner — 1st prize', when: 'jun 2026', where: 'hackathon',
           note: 'Autonomous AI agent automating payroll and end-to-end financial workflows.' },
@@ -138,7 +135,7 @@
     (e.note ? `<div class="tl-n">${e.note}</div>` : '') +
     (e.bullets ? `<ul class="eb">${e.bullets.map(b => `<li>${b}</li>`).join('')}</ul>` : '') +
     `</div></div>`;
-  const tsec = (title, list) => `<div class="sec">${title}</div><div class="tl">${list.map(tl).join('')}</div>`;
+  const tsec = (title, list) => !list.length ? '' : `<div class="sec">${title}</div><div class="tl">${list.map(tl).join('')}</div>`;
 
   const experienceHTML = () => {
     const R = T.resume;
