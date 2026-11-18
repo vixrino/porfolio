@@ -22,7 +22,7 @@
     ['data',   'numpy · scipy · pandas'],
     ['code',   'python · c · c++ · cuda · ocaml · java · sql · solidity · javascript'],
     ['infra',  'docker · kubernetes · linux · git'],
-    ['spoken', 'french (native) · english C1 (TOEFL 5/6)'],
+    ['spoken', 'french (native) · english C1'],
   ];
 
   const RESUME_URL = 'Lucas_Teyssier_CV_no_phone.pdf';
@@ -77,11 +77,11 @@
         ] },
       ],
       schools: [
-        { org: "ISEP — École d'ingénieurs du numérique", role: 'Master of Engineering — Artificial Intelligence, 3.7 GPA', when: 'sep 2025 – jun 2028', where: 'Paris',
-          note: 'deep learning, reinforcement learning, machine learning, computer vision · GRE 340/340 · TOEFL 5/6' },
-        { org: 'Tsinghua University', role: 'Generative AI — non-degree program, 4/4 GPA', when: 'jul 2025', where: 'China',
+        { org: "ISEP — École d'ingénieurs du numérique", role: 'Master of Engineering — Artificial Intelligence', when: 'sep 2025 – jun 2028', where: 'Paris',
+          note: 'deep learning, reinforcement learning, machine learning, computer vision · GRE 340/340' },
+        { org: 'Tsinghua University', role: 'Generative AI — non-degree program', when: 'jul 2025', where: 'China',
           note: 'LLMs, diffusion models, NLP, generative AI for medicine, LLM agents' },
-        { org: 'Université de Bordeaux', role: 'Double BSc — Computer Science & Applied Mathematics, 3.3 GPA', when: 'sep 2023 – may 2025', where: 'Bordeaux',
+        { org: 'Université de Bordeaux', role: 'Double BSc — Computer Science & Applied Mathematics', when: 'sep 2023 – may 2025', where: 'Bordeaux',
           note: 'ranked 1/236 · linear algebra, algorithms, C, probability & statistics · tutored 1st-year CS & maths students in programming' },
       ],
       pubs: [],
