@@ -3,6 +3,10 @@
   'use strict';
 
   const PROJECTS = [
+    { n: 'monarch-fft-mathdx', y: '2026', t: 'c++ · cuda · cufftdx · cublasdx · mcp', u: 'https://github.com/vixrino/monarch-fft-mathdx',
+      d: 'Tensor-core Monarch FFT (cuBLASDx) vs. tuned cuFFTDx on a T4: 2.1–3.0× less error than fp16, but slower. Found a cuBLASDx sm_75 layout pitfall (5.9× slower, 770× error) reported upstream. Ships an MCP server for coding agents.' },
+    { n: 'atlas', y: '2026', t: 'typescript · gaussian splatting · firebase', u: 'https://github.com/vixrino/atlas',
+      d: 'Film a room, walk it in the browser: videos become photorealistic 3D Gaussian splats (SPZ, 64.7 → 4.9 MB) with their ambient audio, grouped into shared journeys on a map.' },
     { n: 'vq-vae-meshGPT', y: '2026', t: 'pytorch · pyg · trimesh', u: 'https://github.com/vixrino/vq-vae-meshGPT',
       d: 'From-scratch VQ-VAE that tokenizes 3D triangle meshes (MeshGPT-style): GNN encoder, residual quantization, graph decoder.' },
     { n: 'football-analysis', y: '2026', t: 'yolo · siglip · opencv',
@@ -21,11 +25,12 @@
     ['ml',     'pytorch · jax · flax · optax · tensorflow · opencv · yolo · transformers'],
     ['data',   'numpy · scipy · pandas'],
     ['code',   'python · c · c++ · cuda · ocaml · java · sql · solidity · javascript'],
+    ['gpu',    'cuda · cufftdx · cublasdx · nsight compute · sass analysis'],
     ['infra',  'docker · kubernetes · linux · git'],
     ['spoken', 'french (native) · english C1'],
   ];
 
-  const RESUME_URL = 'Lucas_Teyssier_CV_no_phone.pdf';
+  const RESUME_URL = 'Lucas_Teyssier_CV_sans_tel.pdf';
 
   const LINKS = [
     ['github',   'vixrino',               'https://github.com/vixrino'],
@@ -39,13 +44,13 @@
     try: 'try',
     about: [
       "Welcome to my 'blog'. I'm Lucas, 22 y/o, I live in Paris — <b>machine learning engineer</b>, dm's open.",
-      "I'm currently working on 3D generative models (VQ-VAE / MeshGPT), computer vision, and systematic trading data.",
+      "I'm currently working on 3D generative models (autoregressive mesh generation), GPU kernels (CUDA / MathDx), and computer vision.",
       'I like taking an idea from a paper all the way to something that actually <i>ships</i>.',
     ],
     help: [
       ['about', 'who I am'], ['projects', 'what I build'], ['skills', 'tech stack'],
       ['contact', 'links & mail'],
-      ['experience', 'jobs & achievements'], ['education', 'schools & degrees'],
+      ['experience', 'jobs, publications & achievements'], ['education', 'schools & degrees'],
       ['resume', 'my CV (pdf)'],
       ['coffee', 'the mascot takes a sip'],
       ['wave', 'he waves at you'], ['sleep', 'he takes a nap'],
@@ -58,7 +63,7 @@
       lead: 'leadership & achievements',
       extra: 'also',
       jobs: [
-        { org: 'Quant Flow', role: 'Data Lead', when: 'feb 2026 – present', where: 'Paris', bullets: [
+        { org: 'Quant Flow', role: 'Data Lead', when: 'feb 2026 – nov 2026', where: 'Paris', bullets: [
           'Automated pipelines turning raw market, macroeconomic and alternative data into production-ready trading signals — data release to signal in under 3 min.',
           'Designed and backtested systematic gold trading strategies on 15 years of multi-source data (Sharpe 1.8, max drawdown 9%), with walk-forward validation.',
           'Led a team of 7 across data engineering and research: data quality, signal library, research to production.',
@@ -84,7 +89,10 @@
         { org: 'Université de Bordeaux', role: 'Double BSc — Computer Science & Applied Mathematics', when: 'sep 2023 – may 2025', where: 'Bordeaux',
           note: 'ranked 1/236 · linear algebra, algorithms, C, probability & statistics · tutored 1st-year CS & maths students in programming' },
       ],
-      pubs: [],
+      pubs: [
+        { org: 'MeshAnyOrder', role: 'M. Balice, D. Lacavalla, <b>L. Teyssier</b>, A. Sevincel, Tonio', when: 'submitted to CVPR 2027', where: 'preprint',
+          note: 'Autoregressive mesh generation: a Transformer decoder conditioned on a point-cloud encoder predicts each face as 9 quantized relative coordinates.' },
+      ],
       leads: [
         { org: 'Hugging Face × Anthropic Hackathon', role: 'Winner — 1st prize', when: 'jun 2026', where: 'hackathon',
           note: 'Autonomous AI agent automating payroll and end-to-end financial workflows.' },
