@@ -50,7 +50,7 @@
     help: [
       ['about', 'who I am'], ['projects', 'what I build'], ['skills', 'tech stack'],
       ['contact', 'links & mail'],
-      ['experience', 'jobs, publications & achievements'], ['education', 'schools & degrees'],
+      ['experience', 'jobs & achievements'], ['education', 'schools & degrees'],
       ['resume', 'my CV (pdf)'],
       ['coffee', 'the mascot takes a sip'],
       ['wave', 'he waves at you'], ['sleep', 'he takes a nap'],
@@ -89,10 +89,7 @@
         { org: 'Université de Bordeaux', role: 'Double BSc — Computer Science & Applied Mathematics', when: 'sep 2023 – may 2025', where: 'Bordeaux',
           note: 'ranked 1/236 · linear algebra, algorithms, C, probability & statistics · tutored 1st-year CS & maths students in programming' },
       ],
-      pubs: [
-        { org: 'MeshAnyOrder', role: 'M. Balice, D. Lacavalla, <b>L. Teyssier</b>, A. Sevincel, Tonio', when: 'submitted to CVPR 2027', where: 'preprint',
-          note: 'Autoregressive mesh generation: a Transformer decoder conditioned on a point-cloud encoder predicts each face as 9 quantized relative coordinates.' },
-      ],
+      pubs: [],
       leads: [
         { org: 'Hugging Face × Anthropic Hackathon', role: 'Winner — 1st prize', when: 'jun 2026', where: 'hackathon',
           note: 'Autonomous AI agent automating payroll and end-to-end financial workflows.' },
