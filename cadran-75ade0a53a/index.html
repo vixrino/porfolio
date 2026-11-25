@@ -8,16 +8,14 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f6f4ef; --card: #fff; --txt: #1d1c1a; --mute: #77736b;
-    --line: #e3dfd6; --accent: #2f5bd3; --accent-txt: #fff;
-    --gauche: #2f7fd3; --droite: #e0533a; --cible: #f0a400; --aiguille: #1d1c1a;
+    --bg: #efe9dd; --txt: #1d1c1a; --mute: #6f6a60; --line: #d9d1c1;
+    --accent: #1f3b5c; --accent-txt: #fff;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       color-scheme: dark;
-      --bg: #151514; --card: #1f1f1d; --txt: #ecebe7; --mute: #9a968d;
-      --line: #33322f; --accent: #7d9cff; --accent-txt: #0d0d0c;
-      --gauche: #5aa2ff; --droite: #ff7a5c; --cible: #ffc533; --aiguille: #ecebe7;
+      --bg: #121417; --txt: #ecebe7; --mute: #9a968d; --line: #2c3036;
+      --accent: #e9b949; --accent-txt: #1a1405;
     }
   }
   * { box-sizing: border-box; }
@@ -28,49 +26,42 @@
   }
   main {
     max-width: 560px; min-height: 100%; margin: 0 auto; padding: 24px 16px 32px;
-    display: flex; flex-direction: column; gap: 16px;
+    display: flex; flex-direction: column; gap: 18px;
   }
-  h1 { font-size: 22px; margin: 0; }
-  button, input { font: inherit; color: inherit; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
+  button { font: inherit; color: inherit; }
 
-  .bouts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
-  .bout {
-    width: 100%; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 2px solid;
-    background: var(--card); font-weight: 700; font-size: 15px; text-align: center; text-overflow: ellipsis;
-  }
-  .bout:read-only { cursor: default; }
-  .bout:read-only:focus { outline: none; }
-  #g { border-color: var(--gauche); color: var(--gauche); }
-  #d { border-color: var(--droite); color: var(--droite); }
-  .fleche { color: var(--mute); font-size: 20px; }
-
-  .cadran-wrap {
-    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    padding: 12px 12px 4px;
+  /* l'objet : même rendu en clair et en sombre, comme un vrai plateau */
+  .boitier {
+    background: linear-gradient(#24303d, #19222c);
+    border-radius: 28px; padding: 18px 14px 14px;
+    box-shadow: 0 14px 30px rgb(0 0 0 / .28), inset 0 1px 0 rgb(255 255 255 / .08);
   }
   svg#cadran { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
   svg#cadran.drag { cursor: grab; }
   svg#cadran.drag:active { cursor: grabbing; }
   #cadran:focus { outline: none; }
-  #cadran:focus-visible .fond { stroke: var(--accent); stroke-width: 3; }
+  #cadran:focus-visible #bord { stroke: #e9b949; }
 
+  #volet {
+    transform-box: view-box; transform-origin: 160px 170px;
+    transition: transform .9s cubic-bezier(.6, 0, .25, 1);
+  }
+  #volet.ouvert { transform: rotate(-180deg); }
+  #aiguille { transition: opacity .25s; }
+
+  .resultat { font-size: 24px; font-weight: 700; text-align: center; margin: 0; }
   .consigne { margin: 0; text-align: center; color: var(--mute); min-height: 3em; }
   .consigne b { color: var(--txt); }
-  .resultat { font-size: 22px; font-weight: 700; text-align: center; margin: 0; }
 
-  .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: auto; }
+  .actions { display: flex; gap: 10px; justify-content: center; margin-top: auto; }
   .main-btn {
-    border: 0; border-radius: 12px; padding: 14px 22px; cursor: pointer;
-    background: var(--accent); color: var(--accent-txt); font-weight: 600; font-size: 17px;
+    border: 0; border-radius: 14px; padding: 15px 22px; cursor: pointer;
+    background: var(--accent); color: var(--accent-txt); font-weight: 700; font-size: 17px;
     flex: 1 1 auto; max-width: 360px;
   }
-  .ghost {
-    border: 1px solid var(--line); background: var(--card); border-radius: 12px;
-    padding: 12px 16px; cursor: pointer;
-  }
-  .ghost:hover { border-color: var(--mute); }
+  .main-btn:disabled { opacity: .5; cursor: default; }
 
-  /* écran de passage : rien de visible pour ne pas trahir la cible */
   .rideau {
     position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center;
     padding: 24px; text-align: center; z-index: 5;
@@ -83,28 +74,42 @@
 <main>
   <h1>Le Cadran</h1>
 
-  <div class="bouts">
-    <input class="bout" id="g" aria-label="Bout gauche" maxlength="30">
-    <input class="bout" id="d" aria-label="Bout droit" maxlength="30">
-  </div>
-
-  <div class="cadran-wrap">
-    <svg id="cadran" viewBox="0 0 320 178" role="slider" aria-label="Aiguille du cadran"
+  <div class="boitier">
+    <svg id="cadran" viewBox="0 0 320 184" role="slider" aria-label="Aiguille du cadran"
          aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
       <defs>
-        <linearGradient id="grad" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0" stop-color="var(--gauche)" stop-opacity=".22"/>
-          <stop offset="1" stop-color="var(--droite)" stop-opacity=".22"/>
+        <clipPath id="haut"><rect x="0" y="0" width="320" height="170"/></clipPath>
+        <radialGradient id="face" cx="50%" cy="100%" r="100%">
+          <stop offset="0" stop-color="#fbf5e8"/>
+          <stop offset="1" stop-color="#e8dcc3"/>
+        </radialGradient>
+        <linearGradient id="voletGrad" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="#3d6f8f"/>
+          <stop offset="1" stop-color="#2a5370"/>
         </linearGradient>
       </defs>
-      <path class="fond" d="M10 168 A150 150 0 0 1 310 168 Z" fill="url(#grad)" stroke="var(--line)" stroke-width="1.5"/>
-      <g id="cible"></g>
-      <g id="graduations" stroke="var(--mute)" stroke-opacity=".5" stroke-width="1.5"></g>
-      <g id="aiguille">
-        <line x1="160" y1="168" x2="160" y2="30" stroke="var(--aiguille)" stroke-width="4" stroke-linecap="round"/>
-        <circle cx="160" cy="30" r="9" fill="var(--accent)"/>
+
+      <g clip-path="url(#haut)">
+        <path d="M14 170 A146 146 0 0 1 306 170 Z" fill="url(#face)"/>
+        <g id="graduations" stroke="#8b7d63" stroke-width="1.5" stroke-linecap="round"></g>
+        <g id="cible"></g>
+        <g id="volet">
+          <path d="M12 170 A148 148 0 0 1 308 170 Z" fill="url(#voletGrad)"/>
+          <path d="M40 170 A120 120 0 0 1 280 170" fill="none" stroke="rgb(255 255 255 / .12)" stroke-width="2"/>
+          <path d="M70 170 A90 90 0 0 1 250 170" fill="none" stroke="rgb(255 255 255 / .08)" stroke-width="2"/>
+          <rect x="146" y="30" width="28" height="8" rx="4" fill="rgb(255 255 255 / .35)"/>
+        </g>
       </g>
-      <circle cx="160" cy="168" r="10" fill="var(--aiguille)"/>
+      <path id="bord" d="M14 170 A146 146 0 0 1 306 170" fill="none" stroke="#0e141a" stroke-width="7"/>
+      <rect x="4" y="168" width="312" height="14" rx="7" fill="#0e141a"/>
+
+      <g id="aiguille">
+        <line x1="160" y1="170" x2="160" y2="34" stroke="#c8372d" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="160" cy="34" r="6" fill="#c8372d"/>
+      </g>
+      <circle cx="160" cy="170" r="17" fill="#c8372d"/>
+      <circle cx="160" cy="170" r="17" fill="none" stroke="rgb(0 0 0 / .25)" stroke-width="2"/>
+      <circle cx="155" cy="165" r="5" fill="rgb(255 255 255 / .35)"/>
     </svg>
   </div>
 
@@ -123,33 +128,11 @@
 
 <script>
 (() => {
-  // Paires écrites pour ce jeu ; modifiables à la main à chaque manche
-  const PAIRES = [
-    ["Froid", "Chaud"], ["Nul", "Génial"], ["Facile", "Difficile"], ["Inutile", "Indispensable"],
-    ["Calme", "Bruyant"], ["Bon marché", "Hors de prix"], ["Ringard", "Stylé"], ["Sain", "Pas sain du tout"],
-    ["Minuscule", "Gigantesque"], ["Lent", "Rapide"], ["Triste", "Joyeux"], ["Rassurant", "Terrifiant"],
-    ["Sucré", "Salé"], ["Pour les enfants", "Pour les adultes"], ["Moche", "Magnifique"],
-    ["Ennuyeux", "Passionnant"], ["Mauvaise idée", "Excellente idée"], ["Naturel", "Artificiel"],
-    ["Rare", "Partout"], ["Mou", "Dur"], ["Sous-coté", "Surcoté"], ["Fragile", "Indestructible"],
-    ["Démodé", "Moderne"], ["Méchant", "Gentil"], ["Sérieux", "Ridicule"], ["Le matin", "La nuit"],
-    ["Été", "Hiver"], ["Sale", "Propre"], ["Inconnu", "Ultra célèbre"], ["Légal", "Illégal"],
-    ["Dégoûtant", "Délicieux"], ["Simple", "Compliqué"], ["Gâchis d'argent", "Bon investissement"],
-    ["Fait pour rester chez soi", "Fait pour sortir"], ["Intello", "Bête"], ["Romantique", "Pas du tout romantique"],
-    ["Héros", "Méchant"], ["Rural", "Urbain"], ["Odeur horrible", "Odeur divine"], ["Pas fatigant", "Épuisant"],
-    ["Utile au quotidien", "Ne sert à rien"], ["Petit plaisir", "Gros luxe"], ["Mauvais film", "Chef-d'œuvre"],
-    ["Danger zéro", "Mortel"], ["Lisse", "Rugueux"], ["Sobre", "Tape-à-l'œil"], ["Talent", "Chance"],
-    ["Vieux", "Jeune"], ["Discret", "Exubérant"], ["Animal mignon", "Animal effrayant"],
-    ["Facile à dessiner", "Impossible à dessiner"], ["Sport tranquille", "Sport extrême"],
-    ["Plat", "Épicé"], ["Gênant", "Classe"], ["Lourd", "Léger"], ["Banal", "Bizarre"],
-    ["Vacances ratées", "Vacances de rêve"], ["Pire métier", "Meilleur métier"],
-    ["Ça se mange cru", "Ça se mange cuit"],
-  ];
-
-  const CX = 160, CY = 168, R = 150;
+  const CX = 160, CY = 170, R = 146;
   const $ = (id) => document.getElementById(id);
-  const svg = $("cadran"), gCible = $("cible"), aig = $("aiguille");
-  const g = $("g"), d = $("d"), consigne = $("consigne"), resultat = $("resultat"), actions = $("actions");
-  const rideau = $("rideau");
+  const svg = $("cadran"), gCible = $("cible"), aig = $("aiguille"), volet = $("volet");
+  const consigne = $("consigne"), resultat = $("resultat"), actions = $("actions"), rideau = $("rideau");
+  const DUREE_VOLET = 900;
 
   // angle a : 0 = tout à gauche, 180 = tout à droite
   const pt = (a, r = R) => {
@@ -162,41 +145,38 @@
     return `M${CX} ${CY} L${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`;
   };
 
-  // graduations
   let gr = "";
-  for (let a = 0; a <= 180; a += 18) {
-    const [x1, y1] = pt(a, R - 8), [x2, y2] = pt(a, R);
-    gr += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  for (let a = 0; a <= 180; a += 9) {
+    const long = a % 45 === 0;
+    const [x1, y1] = pt(a, R - (long ? 14 : 7)), [x2, y2] = pt(a, R - 2);
+    gr += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
   }
   $("graduations").innerHTML = gr;
 
-  let paquet = [], cible = 90, angle = 90, phase = "pret";
+  let cible = 90, angle = 90, phase = "pret";
 
-  function nouvellePaire() {
-    if (!paquet.length) paquet = PAIRES.map((_, i) => i).sort(() => Math.random() - 0.5);
-    const [a, b] = PAIRES[paquet.pop()];
-    g.value = a; d.value = b;
-  }
-
-  function dessinerCible(visible) {
-    if (!visible) { gCible.innerHTML = ""; return; }
+  function dessinerCible() {
     gCible.innerHTML = `
-      <path d="${part(cible - 16, cible + 16)}" fill="var(--cible)" fill-opacity=".25"/>
-      <path d="${part(cible - 9, cible + 9)}" fill="var(--cible)" fill-opacity=".5"/>
-      <path d="${part(cible - 3, cible + 3)}" fill="var(--cible)"/>`;
+      <path d="${part(cible - 17, cible + 17)}" fill="#e9b949"/>
+      <path d="${part(cible - 10, cible + 10)}" fill="#e07a2e"/>
+      <path d="${part(cible - 3.5, cible + 3.5)}" fill="#b8321f"/>`;
   }
+
+  const ouvrir = () => volet.classList.add("ouvert");
+  const fermer = () => volet.classList.remove("ouvert");
 
   function placerAiguille(a) {
     angle = Math.max(0, Math.min(180, a));
     aig.setAttribute("transform", `rotate(${angle - 90} ${CX} ${CY})`);
     svg.setAttribute("aria-valuenow", Math.round((angle / 180) * 100));
   }
+  const montrerAiguille = (v) => { aig.style.opacity = v ? 1 : 0; };
 
-  function bouton(txt, fn, cls = "main-btn") {
+  function bouton(txt, fn) {
     const b = document.createElement("button");
-    b.className = cls; b.textContent = txt; b.onclick = fn;
+    b.className = "main-btn"; b.textContent = txt;
+    b.onclick = () => { b.disabled = true; fn(); };
     actions.appendChild(b);
-    return b;
   }
 
   function passer(txt, btn, fn) {
@@ -211,63 +191,63 @@
     phase = p;
     actions.innerHTML = "";
     resultat.hidden = true;
-    const editable = p === "pret";
-    g.readOnly = d.readOnly = !editable;
     svg.classList.toggle("drag", p === "devine");
     svg.tabIndex = p === "devine" ? 0 : -1;
 
     if (p === "pret") {
-      dessinerCible(false);
-      aig.style.visibility = "hidden";
-      consigne.innerHTML = "Choisis une paire (tu peux taper la tienne), puis <b>donne le téléphone à la personne qui va faire deviner</b>.";
-      bouton("Autre paire", nouvellePaire, "ghost");
-      bouton("Voir la cible", () => passer("Seule la personne qui fait deviner regarde l'écran.", "Je suis seul·e, montrer", () => {
+      fermer(); montrerAiguille(false);
+      consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
+      bouton("Voir la cible", () => passer("Seule la personne qui fait deviner regarde l'écran.", "C'est bon, ouvrir", () => {
         cible = 8 + Math.random() * 164;
+        dessinerCible();
         aller("cible");
+        ouvrir();
       }));
     }
 
     if (p === "cible") {
-      dessinerCible(true);
-      aig.style.visibility = "hidden";
-      consigne.innerHTML = "Mémorise la cible, puis trouve <b>un indice à dire à voix haute</b> qui la place entre les deux bouts.";
-      bouton("Cacher la cible", () => {
-        dessinerCible(false);
-        passer("Cible cachée. Donne le téléphone aux autres et dis ton indice.", "On devine", () => {
+      montrerAiguille(false);
+      consigne.innerHTML = "Mémorise la cible et prépare <b>ton indice</b>.";
+      bouton("Fermer le cadran", () => {
+        fermer();
+        setTimeout(() => passer("Cadran fermé. Donne le téléphone aux autres et dis ton indice.", "On devine", () => {
           placerAiguille(90);
           aller("devine");
-        });
+        }), DUREE_VOLET);
       });
     }
 
     if (p === "devine") {
-      aig.style.visibility = "visible";
-      consigne.innerHTML = "Discutez, puis <b>glissez l'aiguille</b> là où vous pensez que se trouve la cible.";
-      bouton("Révéler", () => aller("revele"));
+      fermer(); montrerAiguille(true);
+      consigne.innerHTML = "Discutez, puis <b>tournez l'aiguille</b> vers la cible.";
+      bouton("Révéler", () => {
+        ouvrir();
+        setTimeout(() => aller("revele"), DUREE_VOLET);
+      });
     }
 
     if (p === "revele") {
-      dessinerCible(true);
-      aig.style.visibility = "visible";
+      montrerAiguille(true);
       const ecart = Math.abs(angle - cible);
-      const pc = Math.round((ecart / 180) * 100);
       resultat.textContent =
-        ecart <= 3 ? "En plein dans le mille !" :
-        ecart <= 9 ? "Tout près !" :
-        ecart <= 16 ? "Dans la zone" :
-        `Raté, écart de ${pc} %`;
+        ecart <= 3.5 ? "En plein dans le mille !" :
+        ecart <= 10 ? "Tout près !" :
+        ecart <= 17 ? "Dans la zone" : "Raté";
       resultat.hidden = false;
-      consigne.innerHTML = cible > angle + 3 ? "La cible était plus vers la droite." :
-                           cible < angle - 3 ? "La cible était plus vers la gauche." : "";
-      bouton("Manche suivante", () => { nouvellePaire(); aller("pret"); });
+      consigne.innerHTML = cible > angle + 3.5 ? "La cible était plus à droite." :
+                           cible < angle - 3.5 ? "La cible était plus à gauche." : "";
+      bouton("Manche suivante", () => {
+        fermer(); montrerAiguille(false);
+        setTimeout(() => aller("pret"), DUREE_VOLET);
+      });
     }
   }
 
-  // ---- glisser l'aiguille ----
+  // ---- tourner l'aiguille ----
   function angleDepuis(e) {
     const r = svg.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * 320;
-    const y = ((e.clientY - r.top) / r.height) * 178;
+    const y = ((e.clientY - r.top) / r.height) * 184;
     const dx = x - CX, dy = CY - y;
     if (dy <= 0) return dx < 0 ? 0 : 180;
     return (Math.atan2(dy, -dx) * 180) / Math.PI;
@@ -290,7 +270,6 @@
   });
 
   placerAiguille(90);
-  nouvellePaire();
   aller("pret");
 })();
 </script>
