@@ -155,11 +155,18 @@
 
   let cible = 90, angle = 90, phase = "pret";
 
+  // 5 bandes de 7° : 2 3 4 3 2
+  const W = 7;
+  const BANDES = [[-2.5, 2, "#e9b949"], [-1.5, 3, "#e07a2e"], [-0.5, 4, "#b8321f"], [0.5, 3, "#e07a2e"], [1.5, 2, "#e9b949"]];
   function dessinerCible() {
-    gCible.innerHTML = `
-      <path d="${part(cible - 17, cible + 17)}" fill="#e9b949"/>
-      <path d="${part(cible - 10, cible + 10)}" fill="#e07a2e"/>
-      <path d="${part(cible - 3.5, cible + 3.5)}" fill="#b8321f"/>`;
+    gCible.innerHTML = BANDES.map(([k, n, coul]) => {
+      const a1 = cible + k * W, mid = a1 + W / 2;
+      const [x, y] = pt(mid, R - 22);
+      return `<path d="${part(a1, a1 + W)}" fill="${coul}" stroke="#fbf5e8" stroke-width=".8"/>
+        <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" transform="rotate(${(mid - 90).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})"
+          text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="800"
+          font-family="system-ui, sans-serif">${n}</text>`;
+    }).join("");
   }
 
   const ouvrir = () => volet.classList.add("ouvert");
@@ -198,7 +205,7 @@
       fermer(); montrerAiguille(false);
       consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
       bouton("Voir la cible", () => passer("Seule la personne qui fait deviner regarde l'écran.", "C'est bon, ouvrir", () => {
-        cible = 8 + Math.random() * 164;
+        cible = 2.5 * W + Math.random() * (180 - 5 * W);
         dessinerCible();
         aller("cible");
         ouvrir();
@@ -230,12 +237,12 @@
       montrerAiguille(true);
       const ecart = Math.abs(angle - cible);
       resultat.textContent =
-        ecart <= 3.5 ? "En plein dans le mille !" :
-        ecart <= 10 ? "Tout près !" :
-        ecart <= 17 ? "Dans la zone" : "Raté";
+        ecart <= W / 2 ? "4 — en plein dans le mille !" :
+        ecart <= 1.5 * W ? "3 — tout près !" :
+        ecart <= 2.5 * W ? "2 — dans la zone" : "Raté";
       resultat.hidden = false;
-      consigne.innerHTML = cible > angle + 3.5 ? "La cible était plus à droite." :
-                           cible < angle - 3.5 ? "La cible était plus à gauche." : "";
+      consigne.innerHTML = cible > angle + W / 2 ? "La cible était plus à droite." :
+                           cible < angle - W / 2 ? "La cible était plus à gauche." : "";
       bouton("Manche suivante", () => {
         fermer(); montrerAiguille(false);
         setTimeout(() => aller("pret"), DUREE_VOLET);
