@@ -1,0 +1,10 @@
+{
+  "name": "Le Cadran",
+  "short_name": "Cadran",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#3b1366",
+  "theme_color": "#3b1366"
+}
