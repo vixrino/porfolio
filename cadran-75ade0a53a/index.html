@@ -216,11 +216,8 @@
       montrerAiguille(false);
       consigne.innerHTML = "Mémorise la cible et prépare <b>ton indice</b>.";
       bouton("Fermer le cadran", () => {
-        fermer();
-        setTimeout(() => passer("Cadran fermé. Donne le téléphone aux autres et dis ton indice.", "On devine", () => {
-          placerAiguille(90);
-          aller("devine");
-        }), DUREE_VOLET);
+        placerAiguille(90);
+        aller("devine");
       });
     }
 
