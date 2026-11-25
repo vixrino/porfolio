@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Le Cadran</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f4ef; --card: #fff; --txt: #1d1c1a; --mute: #77736b;
+    --line: #e3dfd6; --accent: #2f5bd3; --accent-txt: #fff;
+    --gauche: #2f7fd3; --droite: #e0533a; --cible: #f0a400; --aiguille: #1d1c1a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #151514; --card: #1f1f1d; --txt: #ecebe7; --mute: #9a968d;
+      --line: #33322f; --accent: #7d9cff; --accent-txt: #0d0d0c;
+      --gauche: #5aa2ff; --droite: #ff7a5c; --cible: #ffc533; --aiguille: #ecebe7;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main {
+    max-width: 560px; min-height: 100%; margin: 0 auto; padding: 24px 16px 32px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  h1 { font-size: 22px; margin: 0; }
+  button, input { font: inherit; color: inherit; }
+
+  .bouts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: center; }
+  .bout {
+    width: 100%; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 2px solid;
+    background: var(--card); font-weight: 700; font-size: 15px; text-align: center; text-overflow: ellipsis;
+  }
+  .bout:read-only { cursor: default; }
+  .bout:read-only:focus { outline: none; }
+  #g { border-color: var(--gauche); color: var(--gauche); }
+  #d { border-color: var(--droite); color: var(--droite); }
+  .fleche { color: var(--mute); font-size: 20px; }
+
+  .cadran-wrap {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 12px 12px 4px;
+  }
+  svg#cadran { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  svg#cadran.drag { cursor: grab; }
+  svg#cadran.drag:active { cursor: grabbing; }
+  #cadran:focus { outline: none; }
+  #cadran:focus-visible .fond { stroke: var(--accent); stroke-width: 3; }
+
+  .consigne { margin: 0; text-align: center; color: var(--mute); min-height: 3em; }
+  .consigne b { color: var(--txt); }
+  .resultat { font-size: 22px; font-weight: 700; text-align: center; margin: 0; }
+
+  .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: auto; }
+  .main-btn {
+    border: 0; border-radius: 12px; padding: 14px 22px; cursor: pointer;
+    background: var(--accent); color: var(--accent-txt); font-weight: 600; font-size: 17px;
+    flex: 1 1 auto; max-width: 360px;
+  }
+  .ghost {
+    border: 1px solid var(--line); background: var(--card); border-radius: 12px;
+    padding: 12px 16px; cursor: pointer;
+  }
+  .ghost:hover { border-color: var(--mute); }
+
+  /* écran de passage : rien de visible pour ne pas trahir la cible */
+  .rideau {
+    position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center;
+    padding: 24px; text-align: center; z-index: 5;
+  }
+  .rideau[hidden] { display: none; }
+  .rideau p { font-size: 20px; font-weight: 600; margin: 0 0 20px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Le Cadran</h1>
+
+  <div class="bouts">
+    <input class="bout" id="g" aria-label="Bout gauche" maxlength="30">
+    <input class="bout" id="d" aria-label="Bout droit" maxlength="30">
+  </div>
+
+  <div class="cadran-wrap">
+    <svg id="cadran" viewBox="0 0 320 178" role="slider" aria-label="Aiguille du cadran"
+         aria-valuemin="0" aria-valuemax="100" aria-valuenow="50">
+      <defs>
+        <linearGradient id="grad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0" stop-color="var(--gauche)" stop-opacity=".22"/>
+          <stop offset="1" stop-color="var(--droite)" stop-opacity=".22"/>
+        </linearGradient>
+      </defs>
+      <path class="fond" d="M10 168 A150 150 0 0 1 310 168 Z" fill="url(#grad)" stroke="var(--line)" stroke-width="1.5"/>
+      <g id="cible"></g>
+      <g id="graduations" stroke="var(--mute)" stroke-opacity=".5" stroke-width="1.5"></g>
+      <g id="aiguille">
+        <line x1="160" y1="168" x2="160" y2="30" stroke="var(--aiguille)" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="160" cy="30" r="9" fill="var(--accent)"/>
+      </g>
+      <circle cx="160" cy="168" r="10" fill="var(--aiguille)"/>
+    </svg>
+  </div>
+
+  <p class="resultat" id="resultat" hidden></p>
+  <p class="consigne" id="consigne"></p>
+
+  <div class="actions" id="actions"></div>
+</main>
+
+<div class="rideau" id="rideau" hidden>
+  <div>
+    <p id="rideau-txt"></p>
+    <button class="main-btn" id="rideau-btn"></button>
+  </div>
+</div>
+
+<script>
+(() => {
+  // Paires écrites pour ce jeu ; modifiables à la main à chaque manche
+  const PAIRES = [
+    ["Froid", "Chaud"], ["Nul", "Génial"], ["Facile", "Difficile"], ["Inutile", "Indispensable"],
+    ["Calme", "Bruyant"], ["Bon marché", "Hors de prix"], ["Ringard", "Stylé"], ["Sain", "Pas sain du tout"],
+    ["Minuscule", "Gigantesque"], ["Lent", "Rapide"], ["Triste", "Joyeux"], ["Rassurant", "Terrifiant"],
+    ["Sucré", "Salé"], ["Pour les enfants", "Pour les adultes"], ["Moche", "Magnifique"],
+    ["Ennuyeux", "Passionnant"], ["Mauvaise idée", "Excellente idée"], ["Naturel", "Artificiel"],
+    ["Rare", "Partout"], ["Mou", "Dur"], ["Sous-coté", "Surcoté"], ["Fragile", "Indestructible"],
+    ["Démodé", "Moderne"], ["Méchant", "Gentil"], ["Sérieux", "Ridicule"], ["Le matin", "La nuit"],
+    ["Été", "Hiver"], ["Sale", "Propre"], ["Inconnu", "Ultra célèbre"], ["Légal", "Illégal"],
+    ["Dégoûtant", "Délicieux"], ["Simple", "Compliqué"], ["Gâchis d'argent", "Bon investissement"],
+    ["Fait pour rester chez soi", "Fait pour sortir"], ["Intello", "Bête"], ["Romantique", "Pas du tout romantique"],
+    ["Héros", "Méchant"], ["Rural", "Urbain"], ["Odeur horrible", "Odeur divine"], ["Pas fatigant", "Épuisant"],
+    ["Utile au quotidien", "Ne sert à rien"], ["Petit plaisir", "Gros luxe"], ["Mauvais film", "Chef-d'œuvre"],
+    ["Danger zéro", "Mortel"], ["Lisse", "Rugueux"], ["Sobre", "Tape-à-l'œil"], ["Talent", "Chance"],
+    ["Vieux", "Jeune"], ["Discret", "Exubérant"], ["Animal mignon", "Animal effrayant"],
+    ["Facile à dessiner", "Impossible à dessiner"], ["Sport tranquille", "Sport extrême"],
+    ["Plat", "Épicé"], ["Gênant", "Classe"], ["Lourd", "Léger"], ["Banal", "Bizarre"],
+    ["Vacances ratées", "Vacances de rêve"], ["Pire métier", "Meilleur métier"],
+    ["Ça se mange cru", "Ça se mange cuit"],
+  ];
+
+  const CX = 160, CY = 168, R = 150;
+  const $ = (id) => document.getElementById(id);
+  const svg = $("cadran"), gCible = $("cible"), aig = $("aiguille");
+  const g = $("g"), d = $("d"), consigne = $("consigne"), resultat = $("resultat"), actions = $("actions");
+  const rideau = $("rideau");
+
+  // angle a : 0 = tout à gauche, 180 = tout à droite
+  const pt = (a, r = R) => {
+    const t = (a * Math.PI) / 180;
+    return [CX - r * Math.cos(t), CY - r * Math.sin(t)];
+  };
+  const part = (a1, a2) => {
+    a1 = Math.max(0, a1); a2 = Math.min(180, a2);
+    const [x1, y1] = pt(a1), [x2, y2] = pt(a2);
+    return `M${CX} ${CY} L${x1.toFixed(1)} ${y1.toFixed(1)} A${R} ${R} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`;
+  };
+
+  // graduations
+  let gr = "";
+  for (let a = 0; a <= 180; a += 18) {
+    const [x1, y1] = pt(a, R - 8), [x2, y2] = pt(a, R);
+    gr += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }
+  $("graduations").innerHTML = gr;
+
+  let paquet = [], cible = 90, angle = 90, phase = "pret";
+
+  function nouvellePaire() {
+    if (!paquet.length) paquet = PAIRES.map((_, i) => i).sort(() => Math.random() - 0.5);
+    const [a, b] = PAIRES[paquet.pop()];
+    g.value = a; d.value = b;
+  }
+
+  function dessinerCible(visible) {
+    if (!visible) { gCible.innerHTML = ""; return; }
+    gCible.innerHTML = `
+      <path d="${part(cible - 16, cible + 16)}" fill="var(--cible)" fill-opacity=".25"/>
+      <path d="${part(cible - 9, cible + 9)}" fill="var(--cible)" fill-opacity=".5"/>
+      <path d="${part(cible - 3, cible + 3)}" fill="var(--cible)"/>`;
+  }
+
+  function placerAiguille(a) {
+    angle = Math.max(0, Math.min(180, a));
+    aig.setAttribute("transform", `rotate(${angle - 90} ${CX} ${CY})`);
+    svg.setAttribute("aria-valuenow", Math.round((angle / 180) * 100));
+  }
+
+  function bouton(txt, fn, cls = "main-btn") {
+    const b = document.createElement("button");
+    b.className = cls; b.textContent = txt; b.onclick = fn;
+    actions.appendChild(b);
+    return b;
+  }
+
+  function passer(txt, btn, fn) {
+    $("rideau-txt").textContent = txt;
+    $("rideau-btn").textContent = btn;
+    $("rideau-btn").onclick = () => { rideau.hidden = true; fn(); };
+    rideau.hidden = false;
+    $("rideau-btn").focus();
+  }
+
+  function aller(p) {
+    phase = p;
+    actions.innerHTML = "";
+    resultat.hidden = true;
+    const editable = p === "pret";
+    g.readOnly = d.readOnly = !editable;
+    svg.classList.toggle("drag", p === "devine");
+    svg.tabIndex = p === "devine" ? 0 : -1;
+
+    if (p === "pret") {
+      dessinerCible(false);
+      aig.style.visibility = "hidden";
+      consigne.innerHTML = "Choisis une paire (tu peux taper la tienne), puis <b>donne le téléphone à la personne qui va faire deviner</b>.";
+      bouton("Autre paire", nouvellePaire, "ghost");
+      bouton("Voir la cible", () => passer("Seule la personne qui fait deviner regarde l'écran.", "Je suis seul·e, montrer", () => {
+        cible = 8 + Math.random() * 164;
+        aller("cible");
+      }));
+    }
+
+    if (p === "cible") {
+      dessinerCible(true);
+      aig.style.visibility = "hidden";
+      consigne.innerHTML = "Mémorise la cible, puis trouve <b>un indice à dire à voix haute</b> qui la place entre les deux bouts.";
+      bouton("Cacher la cible", () => {
+        dessinerCible(false);
+        passer("Cible cachée. Donne le téléphone aux autres et dis ton indice.", "On devine", () => {
+          placerAiguille(90);
+          aller("devine");
+        });
+      });
+    }
+
+    if (p === "devine") {
+      aig.style.visibility = "visible";
+      consigne.innerHTML = "Discutez, puis <b>glissez l'aiguille</b> là où vous pensez que se trouve la cible.";
+      bouton("Révéler", () => aller("revele"));
+    }
+
+    if (p === "revele") {
+      dessinerCible(true);
+      aig.style.visibility = "visible";
+      const ecart = Math.abs(angle - cible);
+      const pc = Math.round((ecart / 180) * 100);
+      resultat.textContent =
+        ecart <= 3 ? "En plein dans le mille !" :
+        ecart <= 9 ? "Tout près !" :
+        ecart <= 16 ? "Dans la zone" :
+        `Raté, écart de ${pc} %`;
+      resultat.hidden = false;
+      consigne.innerHTML = cible > angle + 3 ? "La cible était plus vers la droite." :
+                           cible < angle - 3 ? "La cible était plus vers la gauche." : "";
+      bouton("Manche suivante", () => { nouvellePaire(); aller("pret"); });
+    }
+  }
+
+  // ---- glisser l'aiguille ----
+  function angleDepuis(e) {
+    const r = svg.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * 320;
+    const y = ((e.clientY - r.top) / r.height) * 178;
+    const dx = x - CX, dy = CY - y;
+    if (dy <= 0) return dx < 0 ? 0 : 180;
+    return (Math.atan2(dy, -dx) * 180) / Math.PI;
+  }
+  let tire = false;
+  svg.addEventListener("pointerdown", (e) => {
+    if (phase !== "devine") return;
+    tire = true; svg.setPointerCapture(e.pointerId);
+    placerAiguille(angleDepuis(e));
+  });
+  svg.addEventListener("pointermove", (e) => { if (tire) placerAiguille(angleDepuis(e)); });
+  const lacher = () => { tire = false; };
+  svg.addEventListener("pointerup", lacher);
+  svg.addEventListener("pointercancel", lacher);
+  svg.addEventListener("keydown", (e) => {
+    if (phase !== "devine") return;
+    const pas = e.shiftKey ? 10 : 2;
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { placerAiguille(angle - pas); e.preventDefault(); }
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") { placerAiguille(angle + pas); e.preventDefault(); }
+  });
+
+  placerAiguille(90);
+  nouvellePaire();
+  aller("pret");
+})();
+</script>
+</body>
+</html>
