@@ -26,7 +26,7 @@
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
   main {
-    max-width: 560px; min-height: 100%; margin: 0 auto; padding: 24px 16px 32px;
+    max-width: 1000px; min-height: 100%; margin: 0 auto; padding: 24px 16px 32px;
     display: flex; flex-direction: column; gap: 18px;
   }
   h1 { font-size: 22px; margin: 0; letter-spacing: .02em; }
@@ -34,6 +34,8 @@
 
   /* l'objet : même rendu en clair et en sombre, comme un vrai plateau */
   .boitier {
+    /* aussi grand que possible sans dépasser la hauteur de l'écran */
+    width: min(100%, calc((100svh - 300px) * 1.74 + 28px)); min-width: min(100%, 320px); margin: 0 auto;
     background: linear-gradient(#24303d, #19222c);
     border-radius: 28px; padding: 18px 14px 14px;
     box-shadow: 0 14px 30px rgb(0 0 0 / .28), inset 0 1px 0 rgb(255 255 255 / .08);
@@ -57,14 +59,30 @@
 
   .mots { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
   .mot {
-    flex: 0 1 48%; padding: 8px 10px; border-radius: 10px; font-weight: 800; font-size: 15px;
+    flex: 0 1 48%; min-width: 0; display: flex; align-items: center; gap: 4px; padding: 8px 10px; border-radius: 10px; font-weight: 800; font-size: 15px;
     line-height: 1.25; background: #fbf5e8; color: #19222c; box-shadow: 0 2px 0 rgb(0 0 0 / .35);
   }
-  .mot.g { text-align: left; }
-  .mot.d { text-align: right; }
+  .mot .champ {
+    flex: 1; min-width: 0; overflow-wrap: anywhere; min-height: 1.25em;
+    -webkit-user-select: text; user-select: text;
+  }
+  .mot.d .champ { text-align: right; }
+  .mot .champ[contenteditable="plaintext-only"], .mot .champ[contenteditable="true"] {
+    text-decoration: underline dashed #8b7d63 1.5px; text-underline-offset: 3px; cursor: text;
+  }
+  .mot .champ:focus { outline: none; text-decoration-style: solid; }
   .ghost {
     border: 1px solid var(--line); background: transparent; border-radius: 14px;
     padding: 14px 16px; cursor: pointer; font-weight: 600;
+  }
+  @media (min-width: 800px) {
+    main { padding-top: 32px; gap: 22px; }
+    h1 { font-size: 28px; }
+    .boitier { border-radius: 40px; padding: 28px 24px 22px; width: min(100%, calc((100svh - 400px) * 1.74 + 48px)); }
+    .mot { font-size: 22px; padding: 12px 16px; border-radius: 14px; }
+    .resultat { font-size: 32px; }
+    .consigne { font-size: 18px; }
+    .main-btn, .ghost { font-size: 19px; padding: 16px 28px; }
   }
   .actions { display: flex; gap: 10px; justify-content: center; margin-top: auto; }
   .main-btn {
@@ -118,8 +136,8 @@
       <circle cx="155" cy="165" r="5" fill="rgb(255 255 255 / .35)"/>
     </svg>
     <div class="mots">
-      <span class="mot g" id="mot-g"></span>
-      <span class="mot d" id="mot-d"></span>
+      <div class="mot g"><span aria-hidden="true">←</span><span class="champ" id="mot-g" role="textbox" aria-label="Mot de gauche"></span></div>
+      <div class="mot d"><span class="champ" id="mot-d" role="textbox" aria-label="Mot de droite"></span><span aria-hidden="true">→</span></div>
     </div>
   </div>
 
@@ -204,12 +222,18 @@
     ["Ça se mange cru", "Ça se mange cuit"],
   ];
 
+  // "plaintext-only" évite le collage de mise en forme ; repli sur "true" sinon
+  const editable = (() => { const t = document.createElement("span"); t.contentEditable = "plaintext-only"; return t.contentEditable === "plaintext-only" ? "plaintext-only" : "true"; })();
+  for (const m of [document.getElementById("mot-g"), document.getElementById("mot-d")]) {
+    m.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); m.blur(); } });
+    m.addEventListener("input", () => { if (m.textContent.length > 40) m.textContent = m.textContent.slice(0, 40); });
+  }
   let paquet = [];
   function nouvellePaire() {
     if (!paquet.length) paquet = shuffle(PAIRES.map((_, i) => i));
     const [a, b] = PAIRES[paquet.pop()];
-    $("mot-g").textContent = "← " + a;
-    $("mot-d").textContent = b + " →";
+    $("mot-g").textContent = a;
+    $("mot-d").textContent = b;
   }
   function shuffle(t) {
     for (let i = t.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [t[i], t[j]] = [t[j], t[i]]; }
@@ -230,10 +254,14 @@
     svg.classList.toggle("drag", p === "devine");
     svg.tabIndex = p === "devine" ? 0 : -1;
 
+    for (const m of [$("mot-g"), $("mot-d")]) {
+      if (p === "pret") m.setAttribute("contenteditable", editable);
+      else { m.removeAttribute("contenteditable"); m.blur(); }
+    }
     if (p === "pret") {
       fermer(); montrerAiguille(false);
       gCible.innerHTML = "";
-      consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
+      consigne.innerHTML = "Touche un mot pour le changer, puis donne le téléphone à la personne qui <b>fait deviner</b>.";
       bouton("Autre paire", nouvellePaire, "ghost", true);
       bouton("Voir la cible", () => {
         cible = 2.5 * W + Math.random() * (180 - 5 * W);
