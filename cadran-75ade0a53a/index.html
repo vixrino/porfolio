@@ -62,12 +62,6 @@
   }
   .main-btn:disabled { opacity: .5; cursor: default; }
 
-  .rideau {
-    position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center;
-    padding: 24px; text-align: center; z-index: 5;
-  }
-  .rideau[hidden] { display: none; }
-  .rideau p { font-size: 20px; font-weight: 600; margin: 0 0 20px; }
 </style>
 </head>
 <body>
@@ -119,19 +113,13 @@
   <div class="actions" id="actions"></div>
 </main>
 
-<div class="rideau" id="rideau" hidden>
-  <div>
-    <p id="rideau-txt"></p>
-    <button class="main-btn" id="rideau-btn"></button>
-  </div>
-</div>
 
 <script>
 (() => {
   const CX = 160, CY = 170, R = 146;
   const $ = (id) => document.getElementById(id);
   const svg = $("cadran"), gCible = $("cible"), aig = $("aiguille"), volet = $("volet");
-  const consigne = $("consigne"), resultat = $("resultat"), actions = $("actions"), rideau = $("rideau");
+  const consigne = $("consigne"), resultat = $("resultat"), actions = $("actions");
   const DUREE_VOLET = 900;
 
   // angle a : 0 = tout à gauche, 180 = tout à droite
@@ -157,7 +145,7 @@
 
   // 5 bandes de 7° : 2 3 4 3 2
   const W = 7;
-  const BANDES = [[-2.5, 2, "#e9b949"], [-1.5, 3, "#e07a2e"], [-0.5, 4, "#b8321f"], [0.5, 3, "#e07a2e"], [1.5, 2, "#e9b949"]];
+  const BANDES = [[-2.5, 2, "#e9b949"], [-1.5, 3, "#e07a2e"], [-0.5, 4, "#6b6f76"], [0.5, 3, "#e07a2e"], [1.5, 2, "#e9b949"]];
   function dessinerCible() {
     gCible.innerHTML = BANDES.map(([k, n, coul]) => {
       const a1 = cible + k * W, mid = a1 + W / 2;
@@ -186,14 +174,6 @@
     actions.appendChild(b);
   }
 
-  function passer(txt, btn, fn) {
-    $("rideau-txt").textContent = txt;
-    $("rideau-btn").textContent = btn;
-    $("rideau-btn").onclick = () => { rideau.hidden = true; fn(); };
-    rideau.hidden = false;
-    $("rideau-btn").focus();
-  }
-
   function aller(p) {
     phase = p;
     actions.innerHTML = "";
@@ -204,12 +184,12 @@
     if (p === "pret") {
       fermer(); montrerAiguille(false);
       consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
-      bouton("Voir la cible", () => passer("Seule la personne qui fait deviner regarde l'écran.", "C'est bon, ouvrir", () => {
+      bouton("Voir la cible", () => {
         cible = 2.5 * W + Math.random() * (180 - 5 * W);
         dessinerCible();
         aller("cible");
         ouvrir();
-      }));
+      });
     }
 
     if (p === "cible") {
