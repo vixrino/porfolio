@@ -146,9 +146,6 @@
   @media (orientation: portrait) and (pointer: coarse) and (max-width: 600px) {
     body:not(.portrait-ok) .voile.rotation { display: grid; }
   }
-  .voile.ios.ouvert { display: grid; }
-  .voile ol { text-align: left; margin: 0 0 22px; padding-left: 22px; font-size: 16px; max-width: 320px; }
-  .voile ol li { margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -165,19 +162,6 @@
       <button class="main-btn" id="rot-pe">Plein écran à l'horizontale</button>
       <button class="ghost" id="rot-ok">Jouer quand même à la verticale</button>
     </div>
-  </div>
-</div>
-
-<div class="voile ios" id="voile-ios">
-  <div>
-    <p>Plein écran sur iPhone</p>
-    <small>Safari ne permet pas le plein écran d'une page. Pour cacher la barre d'adresse :</small>
-    <ol>
-      <li>Touche le bouton <b>Partager</b> de Safari.</li>
-      <li>Choisis <b>Sur l'écran d'accueil</b>, puis <b>Ajouter</b>.</li>
-      <li>Ouvre le jeu depuis la nouvelle icône : il s'affiche sans barre.</li>
-    </ol>
-    <div class="actions"><button class="main-btn" id="ios-ok">Compris</button></div>
   </div>
 </div>
 
@@ -515,7 +499,6 @@
   const racine = document.documentElement;
   const peDispo = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   const autonome = matchMedia("(display-mode: fullscreen), (display-mode: standalone)").matches || navigator.standalone === true;
-  const estIOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
   const enPE = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
   async function pleinEcran() {
     if (peDispo) {
@@ -524,17 +507,15 @@
         await (racine.requestFullscreen || racine.webkitRequestFullscreen).call(racine, { navigationUI: "hide" });
         try { await screen.orientation.lock("landscape"); } catch {}
       } catch {}
-    } else if (estIOS) {
-      $("voile-ios").classList.add("ouvert");
     }
   }
   const pe = $("pe");
-  pe.hidden = autonome || (!peDispo && !estIOS);
+  // iPhone : Safari n'autorise pas le plein écran d'une page, donc pas de bouton qui ne marche pas
+  pe.hidden = autonome || !peDispo;
   pe.onclick = pleinEcran;
   $("rot-pe").onclick = pleinEcran;
-  $("rot-pe").hidden = !peDispo && !estIOS;
+  $("rot-pe").hidden = !peDispo;
   $("rot-ok").onclick = () => document.body.classList.add("portrait-ok");
-  $("ios-ok").onclick = () => $("voile-ios").classList.remove("ouvert");
   const majPE = () => {
     pe.setAttribute("aria-label", enPE() ? "Quitter le plein écran" : "Plein écran");
     setTimeout(ajuster, 150);
