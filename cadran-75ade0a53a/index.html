@@ -21,6 +21,7 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body {
+    -webkit-user-select: none; user-select: none;
     margin: 0; background: var(--bg); color: var(--txt);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
@@ -183,6 +184,7 @@
 
     if (p === "pret") {
       fermer(); montrerAiguille(false);
+      gCible.innerHTML = "";
       consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
       bouton("Voir la cible", () => {
         cible = 2.5 * W + Math.random() * (180 - 5 * W);
@@ -203,8 +205,10 @@
 
     if (p === "devine") {
       fermer(); montrerAiguille(true);
+      setTimeout(() => { if (phase === "devine") gCible.innerHTML = ""; }, DUREE_VOLET);
       consigne.innerHTML = "Discutez, puis <b>tournez l'aiguille</b> vers la cible.";
       bouton("Révéler", () => {
+        dessinerCible();
         ouvrir();
         setTimeout(() => aller("revele"), DUREE_VOLET);
       });
