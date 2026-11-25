@@ -55,6 +55,17 @@
   .consigne { margin: 0; text-align: center; color: var(--mute); min-height: 3em; }
   .consigne b { color: var(--txt); }
 
+  .mots { display: flex; justify-content: space-between; gap: 10px; margin-top: 10px; }
+  .mot {
+    flex: 0 1 48%; padding: 8px 10px; border-radius: 10px; font-weight: 800; font-size: 15px;
+    line-height: 1.25; background: #fbf5e8; color: #19222c; box-shadow: 0 2px 0 rgb(0 0 0 / .35);
+  }
+  .mot.g { text-align: left; }
+  .mot.d { text-align: right; }
+  .ghost {
+    border: 1px solid var(--line); background: transparent; border-radius: 14px;
+    padding: 14px 16px; cursor: pointer; font-weight: 600;
+  }
   .actions { display: flex; gap: 10px; justify-content: center; margin-top: auto; }
   .main-btn {
     border: 0; border-radius: 14px; padding: 15px 22px; cursor: pointer;
@@ -106,6 +117,10 @@
       <circle cx="160" cy="170" r="17" fill="none" stroke="rgb(0 0 0 / .25)" stroke-width="2"/>
       <circle cx="155" cy="165" r="5" fill="rgb(255 255 255 / .35)"/>
     </svg>
+    <div class="mots">
+      <span class="mot g" id="mot-g"></span>
+      <span class="mot d" id="mot-d"></span>
+    </div>
   </div>
 
   <p class="resultat" id="resultat" hidden></p>
@@ -168,10 +183,43 @@
   }
   const montrerAiguille = (v) => { aig.style.opacity = v ? 1 : 0; };
 
-  function bouton(txt, fn) {
+  const PAIRES = [
+    ["Froid", "Chaud"], ["Nul", "Génial"], ["Facile", "Difficile"], ["Inutile", "Indispensable"],
+    ["Calme", "Bruyant"], ["Bon marché", "Hors de prix"], ["Ringard", "Stylé"], ["Sain", "Pas sain du tout"],
+    ["Minuscule", "Gigantesque"], ["Lent", "Rapide"], ["Triste", "Joyeux"], ["Rassurant", "Terrifiant"],
+    ["Sucré", "Salé"], ["Pour les enfants", "Pour les adultes"], ["Moche", "Magnifique"],
+    ["Ennuyeux", "Passionnant"], ["Mauvaise idée", "Excellente idée"], ["Naturel", "Artificiel"],
+    ["Rare", "Partout"], ["Mou", "Dur"], ["Sous-coté", "Surcoté"], ["Fragile", "Indestructible"],
+    ["Démodé", "Moderne"], ["Méchant", "Gentil"], ["Sérieux", "Ridicule"], ["Le matin", "La nuit"],
+    ["Été", "Hiver"], ["Sale", "Propre"], ["Inconnu", "Ultra célèbre"], ["Légal", "Illégal"],
+    ["Dégoûtant", "Délicieux"], ["Simple", "Compliqué"], ["Gâchis d'argent", "Bon investissement"],
+    ["Fait pour rester chez soi", "Fait pour sortir"], ["Intello", "Bête"], ["Romantique", "Pas du tout romantique"],
+    ["Héros", "Méchant"], ["Rural", "Urbain"], ["Odeur horrible", "Odeur divine"], ["Pas fatigant", "Épuisant"],
+    ["Utile au quotidien", "Ne sert à rien"], ["Petit plaisir", "Gros luxe"], ["Mauvais film", "Chef-d'œuvre"],
+    ["Danger zéro", "Mortel"], ["Lisse", "Rugueux"], ["Sobre", "Tape-à-l'œil"], ["Talent", "Chance"],
+    ["Vieux", "Jeune"], ["Discret", "Exubérant"], ["Animal mignon", "Animal effrayant"],
+    ["Facile à dessiner", "Impossible à dessiner"], ["Sport tranquille", "Sport extrême"],
+    ["Plat", "Épicé"], ["Gênant", "Classe"], ["Lourd", "Léger"], ["Banal", "Bizarre"],
+    ["Vacances ratées", "Vacances de rêve"], ["Pire métier", "Meilleur métier"],
+    ["Ça se mange cru", "Ça se mange cuit"],
+  ];
+
+  let paquet = [];
+  function nouvellePaire() {
+    if (!paquet.length) paquet = shuffle(PAIRES.map((_, i) => i));
+    const [a, b] = PAIRES[paquet.pop()];
+    $("mot-g").textContent = "← " + a;
+    $("mot-d").textContent = b + " →";
+  }
+  function shuffle(t) {
+    for (let i = t.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [t[i], t[j]] = [t[j], t[i]]; }
+    return t;
+  }
+
+  function bouton(txt, fn, cls = "main-btn", garder = false) {
     const b = document.createElement("button");
-    b.className = "main-btn"; b.textContent = txt;
-    b.onclick = () => { b.disabled = true; fn(); };
+    b.className = cls; b.textContent = txt;
+    b.onclick = () => { if (!garder) b.disabled = true; fn(); };
     actions.appendChild(b);
   }
 
@@ -186,6 +234,7 @@
       fermer(); montrerAiguille(false);
       gCible.innerHTML = "";
       consigne.innerHTML = "Donne le téléphone à la personne qui <b>fait deviner</b>.";
+      bouton("Autre paire", nouvellePaire, "ghost", true);
       bouton("Voir la cible", () => {
         cible = 2.5 * W + Math.random() * (180 - 5 * W);
         dessinerCible();
@@ -225,6 +274,7 @@
       consigne.innerHTML = cible > angle + W / 2 ? "La cible était plus à droite." :
                            cible < angle - W / 2 ? "La cible était plus à gauche." : "";
       bouton("Manche suivante", () => {
+        nouvellePaire();
         fermer(); montrerAiguille(false);
         setTimeout(() => aller("pret"), DUREE_VOLET);
       });
@@ -258,6 +308,7 @@
   });
 
   placerAiguille(90);
+  nouvellePaire();
   aller("pret");
 })();
 </script>
