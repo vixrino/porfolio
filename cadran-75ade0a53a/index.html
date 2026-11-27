@@ -253,9 +253,14 @@
   const BANDES = [[-2.5, 2, "#ffd166"], [-1.5, 3, "#ff7aa8"], [-0.5, 4, "#6b6f76"], [0.5, 3, "#ff7aa8"], [1.5, 2, "#ffd166"]];
   function dessinerCible() {
     gCible.innerHTML = BANDES.map(([k, n, coul]) => {
-      const a1 = cible + k * W, mid = a1 + W / 2;
+      // bandes coupées au bord du cadran : la cible peut aller de 0 à 180
+      const a1 = Math.max(0, cible + k * W), a2 = Math.min(180, cible + (k + 1) * W);
+      if (a2 - a1 <= 0) return "";
+      const mid = (a1 + a2) / 2;
       const [x, y] = pt(mid, R - 22);
-      return `<path d="${part(a1, a1 + W)}" fill="${coul}" stroke="#fdf8ff" stroke-width=".8"/>
+      const forme = `<path d="${part(a1, a2)}" fill="${coul}" stroke="#fdf8ff" stroke-width=".8"/>`;
+      if (a2 - a1 < 3.5) return forme;
+      return `${forme}
         <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" transform="rotate(${(mid - 90).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})"
           text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="13" font-weight="800"
           font-family="system-ui, sans-serif">${n}</text>`;
@@ -406,7 +411,7 @@
       consigne.innerHTML = "Touche un mot pour le changer, puis donne le téléphone à la personne qui <b>fait deviner</b>.";
       bouton("Autre paire", nouvellePaire, "ghost", true);
       bouton("Voir la cible", () => {
-        cible = 2.5 * W + Math.random() * (180 - 5 * W);
+        cible = Math.random() * 180;
         dessinerCible();
         aller("cible");
         ouvrir();
